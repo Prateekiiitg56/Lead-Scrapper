@@ -1,0 +1,492 @@
+{
+  "name": "Unbias.xai - Inbound WhatsApp Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "unbias-wa-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0224c959-b238-4fb6-8803-5a48bda61a11",
+      "name": "WhatsApp Webhook (GET Verification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "unbias-wa-inbound-get",
+      "notes": "Handles Meta GET verification challenge when clicking 'Verify and save' in Meta Portal."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "unbias-wa-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "be61cdc9-53d9-4986-b5b4-947329d8f90c",
+      "name": "WhatsApp Webhook (POST Messages)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "webhookId": "unbias-wa-inbound-post",
+      "notes": "Receives inbound WhatsApp customer messages and delivery status updates."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Meta WhatsApp Cloud API webhook payload\nconst body = $json.body || {};\nconst query = $json.query || {};\n\n// ── GET: Meta verification challenge ──\nif (query['hub.mode'] === 'subscribe' || query['hub.challenge']) {\n  return [{ json: { _verification: true, challenge: query['hub.challenge'] } }];\n}\n\n// ── POST: Parse webhook payload ──\nconst entry = (body.entry || [])[0];\nconst change = (entry?.changes || [])[0];\nconst value = change?.value || {};\n\n// 1. Handle inbound customer messages FIRST\nconst messages = value.messages || [];\nif (messages.length > 0) {\n  const msg = messages[0];\n  const contact = (value.contacts || [])[0];\n  const rawPhone = String(msg.from || '').replace(/^\\+/, '');\n  const formattedPhone = '+' + rawPhone;\n  return [{ json: {\n    _type: 'inbound_message',\n    wamid: msg.id,\n    phone: formattedPhone,\n    raw_phone: rawPhone,\n    contact_name: contact?.profile?.name || '',\n    message_type: msg.type,\n    text: msg.text?.body || msg.button?.text || msg.interactive?.button_reply?.title || 'Media message',\n    media_id: msg[msg.type]?.id || null,\n    media_mime: msg[msg.type]?.mime_type || null,\n    timestamp: msg.timestamp || Math.floor(Date.now() / 1000)\n  }}];\n}\n\n// 2. Handle status updates (sent, delivered, read, failed)\nif (value.statuses && value.statuses.length > 0) {\n  const status = value.statuses[0];\n  return [{ json: {\n    _type: 'status_update',\n    wamid: status.id,\n    status: status.status,\n    phone: '+' + String(status.recipient_id || '').replace(/^\\+/, ''),\n    timestamp: status.timestamp,\n    errors: status.errors || null\n  }}];\n}\n\nreturn [{ json: { _type: 'no_message' } }];"
+      },
+      "id": "a3661779-ed03-442d-86e4-69b76e3cb7b2",
+      "name": "Parse Webhook Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ],
+      "notes": "Prioritizes inbound customer messages, formats phone numbers cleanly, and extracts text content."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-verification",
+              "leftValue": "={{$json._verification}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1714846-fede-42ad-aa97-cc836623fce1",
+      "name": "IF Verification",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        112
+      ],
+      "notes": "True: return challenge for Meta verification. False: continue to message routing."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.challenge}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "94ca9dca-b9ad-4215-a127-73c3a302b150",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        672,
+        0
+      ],
+      "notes": "Returns the hub.challenge value to Meta for webhook verification."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-type",
+              "leftValue": "={{$json._type}}",
+              "rightValue": "inbound_message",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a4d943f7-4fc6-4f3e-8579-9be89490fb09",
+      "name": "Route: Message vs Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        672,
+        224
+      ],
+      "notes": "True: inbound message → save + AI classify. False: status update → update existing conversation record."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads?on_conflict=phone",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{$json.phone}}\",\n  \"business_name\": \"{{$json.contact_name || 'Unknown Business'}}\",\n  \"status\": \"REPLIED\",\n  \"last_reply_at\": \"{{new Date(parseInt($json.timestamp) * 1000).toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "701aa2ff-5727-4dfa-8296-aa29744a01bb",
+      "name": "Upsert Lead (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        112
+      ],
+      "notes": "Upserts lead by phone number and marks status as REPLIED."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_id\": \"{{$node['Upsert Lead (Supabase)'].json[0]?.id || $node['Upsert Lead (Supabase)'].json.id}}\",\n  \"direction\": \"INBOUND\",\n  \"message\": \"{{$node['Parse Webhook Payload'].json.text}}\",\n  \"message_type\": \"{{$node['Parse Webhook Payload'].json.message_type}}\",\n  \"status\": \"delivered\",\n  \"wamid\": \"{{$node['Parse Webhook Payload'].json.wamid}}\",\n  \"timestamp\": \"{{new Date(parseInt($node['Parse Webhook Payload'].json.timestamp) * 1000).toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "8ad893f0-9ff5-4208-8f1d-be8ee74de165",
+      "name": "Save Conversation (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        112
+      ],
+      "notes": "Saves the inbound message to conversations table in Supabase."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are an AI sales assistant classifier for a business outreach CRM. Analyze customer replies and return structured JSON. Respond ONLY with valid JSON containing: intent (pricing|info|interested|not_interested|complaint|greeting|other), sentiment (positive|neutral|negative), priority (high|medium|low), summary (one sentence), next_action (send_pricing|schedule_call|follow_up|close_lead|escalate|none).\\n\\nCustomer reply: {{$node['Parse Webhook Payload'].json.text}}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {}
+      },
+      "id": "b34ab92c-a8f0-467a-8956-700eaf31467b",
+      "name": "AI Classify (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        112
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_GEMINI_CREDENTIAL_ID",
+          "name": "Gemini API"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Calls Google Gemini 1.5 Flash to classify the inbound message."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads?id=eq.{{$node['Upsert Lead (Supabase)'].json[0]?.id || $node['Upsert Lead (Supabase)'].json.id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ai_summary\": \"{{JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text || '{}').summary || ''}}\",\n  \"ai_intent\": \"{{JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text || '{}').intent || ''}}\",\n  \"ai_sentiment\": \"{{JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text || '{}').sentiment || ''}}\",\n  \"interest_score\": {{JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text || '{}').sentiment === 'positive' ? 75 : JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text || '{}').sentiment === 'neutral' ? 50 : 25}}\n}",
+        "options": {}
+      },
+      "id": "60927b10-5c60-4d2e-b378-1eebd6b7ac20",
+      "name": "Update Lead with AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        112
+      ],
+      "notes": "Updates the lead record with AI classification results."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/conversations?wamid=eq.{{$json.wamid}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_ANON_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"{{$json.status}}\"\n}",
+        "options": {}
+      },
+      "id": "6694a4b6-b960-4354-be99-3621635f9548",
+      "name": "Update Message Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        336
+      ],
+      "notes": "Updates delivery status of outbound messages."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "7a01a7dc-d16d-4f50-925d-81887dfce202",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1792,
+        112
+      ],
+      "notes": "Returns 200 OK to Meta."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook (GET Verification)": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Webhook (POST Messages)": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook Payload": {
+      "main": [
+        [
+          {
+            "node": "IF Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Verification": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route: Message vs Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Message vs Status": {
+      "main": [
+        [
+          {
+            "node": "Upsert Lead (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Message Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Lead (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Save Conversation (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Conversation (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "AI Classify (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classify (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Update Lead with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead with AI": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Message Status": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6100bbd5-f29a-460b-9860-d7f96dfa02d1",
+  "meta": {
+    "instanceId": "ab0acde4517c7ed13e405ca24b1ffb7b6a7a79396124d08dd06950946fd60669"
+  },
+  "id": "6Lgri2wv8ijBKdXT",
+  "tags": [
+    {
+      "updatedAt": "2026-08-05T15:14:39.580Z",
+      "createdAt": "2026-08-05T15:14:39.580Z",
+      "id": "6vEqyNgeULMQ2kaV",
+      "name": "unbias-crm"
+    }
+  ]
+}

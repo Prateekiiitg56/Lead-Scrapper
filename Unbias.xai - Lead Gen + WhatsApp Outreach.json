@@ -1,0 +1,1299 @@
+  {
+    "name": "Unbias.xai - Lead Gen + WhatsApp Outreach",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "unbias-lead-search",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "a04ef203-9655-4297-a417-ceb0701074f4",
+        "name": "Lead Search Form",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1040,
+          192
+        ],
+        "webhookId": "unbias-lead-search",
+        "notes": "POST body: { \"business_type\": \"...\", \"business_type_other\": \"...\", \"location\": \"...\" }. This branch ONLY searches and returns leads now — it no longer sends WhatsApp messages automatically."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "a1",
+                "name": "search_query",
+                "type": "string",
+                "value": "={{$json.body.business_type === 'Other' && $json.body.business_type_other ? $json.body.business_type_other : $json.body.business_type}}"
+              },
+              {
+                "id": "a2",
+                "name": "search_location",
+                "type": "string",
+                "value": "={{$json.body.location}}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "48ed1aab-c136-4fae-8069-9a74d7da2b58",
+        "name": "Search Params",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -816,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://maps.googleapis.com/maps/api/place/textsearch/json",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpQueryAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "={{$json.search_query}} in {{$json.search_location}}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "903d6185-dc2f-400d-8226-30ba3f716357",
+        "name": "Google Places Text Search",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -608,
+          192
+        ],
+        "credentials": {
+          "httpQueryAuth": {
+            "id": "YOUR_GOOGLE_PLACES_CREDENTIAL_ID",
+            "name": "Google Places"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "results",
+          "options": {}
+        },
+        "id": "bdcfb9f0-2df6-4fe4-8ba4-4ded71fa46f0",
+        "name": "Split Places",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          -384,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://maps.googleapis.com/maps/api/place/details/json",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpQueryAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "place_id",
+                "value": "={{$json.place_id}}"
+              },
+              {
+                "name": "fields",
+                "value": "name,formatted_phone_number,international_phone_number,website,rating,formatted_address"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "2789acf8-f2ad-4e54-a2ef-07637bffb12e",
+        "name": "Place Details",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -160,
+          192
+        ],
+        "credentials": {
+          "httpQueryAuth": {
+            "id": "YOUR_GOOGLE_PLACES_CREDENTIAL_ID",
+            "name": "Google Places"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c2",
+                "leftValue": "={{$json.result.international_phone_number}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "97d6baf5-b3cb-4b5b-b79f-b31aeba139d1",
+        "name": "Filter: No Website + Has Phone",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "fl1",
+                "name": "name",
+                "type": "string",
+                "value": "={{$json.lead_name}}"
+              },
+              {
+                "id": "fl2",
+                "name": "phone",
+                "type": "string",
+                "value": "={{$json.lead_phone}}"
+              },
+              {
+                "id": "fl3",
+                "name": "address",
+                "type": "string",
+                "value": "={{$json.lead_address}}"
+              },
+              {
+                "id": "fl4",
+                "name": "rating",
+                "type": "string",
+                "value": "={{$json.lead_rating}}"
+              },
+              {
+                "id": "16a1a609-65d7-4155-8239-a952e638a727",
+                "name": "has_website",
+                "value": "={{$json.has_website}}",
+                "type": "string"
+              },
+              {
+                "id": "2e7e2f58-bf68-41a3-b2c9-b87912d887ac",
+                "name": "website",
+                "value": "={{$json.website_url}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "a784a907-8246-44bf-9f19-8bb860f1f50e",
+        "name": "Format Lead",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1040,
+          64
+        ],
+        "notes": "Cleans each lead down to just the fields the frontend needs to display: name, phone, address, rating."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "w1",
+                "leftValue": "={{ $json.website }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "e8291a01-0001-4000-8000-000000000001",
+        "name": "If Has Website",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1200,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$json.website.startsWith('http') ? $json.website : 'https://' + $json.website}}",
+          "responseFormat": "string",
+          "options": {
+            "timeout": 5000
+          }
+        },
+        "id": "e8291a01-0004-4000-8000-000000000004",
+        "name": "Direct Website Fetch",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1400,
+          -40
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "for (const item of $input.all()) {\n  const html = typeof item.json === 'string' ? item.json : (item.json.data || item.json.body || JSON.stringify(item.json));\n  const matches = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || [];\n  \n  const valid = matches.filter(email => {\n    const e = email.toLowerCase();\n    return !e.endsWith('.png') && \n           !e.endsWith('.jpg') && \n           !e.endsWith('.jpeg') && \n           !e.endsWith('.gif') && \n           !e.endsWith('.svg') && \n           !e.endsWith('.js') && \n           !e.endsWith('.css') && \n           !e.endsWith('.webp') &&\n           !e.includes('sentry') &&\n           !e.includes('example.com') &&\n           !e.includes('wixpress.com') &&\n           !e.includes('domain.com') &&\n           !e.includes('schema.org');\n  });\n\n  item.json.scraped_email = valid.length > 0 ? valid[0] : '';\n}\nreturn $input.all();"
+        },
+        "id": "e8291a01-0002-4000-8000-000000000002",
+        "name": "Extract Website Email",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1600,
+          -40
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "h1",
+                "name": "name",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.name }}"
+              },
+              {
+                "id": "h2",
+                "name": "phone",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.phone }}"
+              },
+              {
+                "id": "h3",
+                "name": "address",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.address }}"
+              },
+              {
+                "id": "h4",
+                "name": "rating",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.rating }}"
+              },
+              {
+                "id": "h5",
+                "name": "has_website",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.has_website }}"
+              },
+              {
+                "id": "h6",
+                "name": "website",
+                "type": "string",
+                "value": "={{ $('Format Lead').item.json.website }}"
+              },
+              {
+                "id": "h7",
+                "name": "email",
+                "type": "string",
+                "value": "={{ $json.scraped_email || '' }}"
+              },
+              {
+                "id": "h8",
+                "name": "linkedin_url",
+                "type": "string",
+                "value": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "e8291a01-0003-4000-8000-000000000003",
+        "name": "Format Scraped Lead",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1800,
+          -40
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "nw1",
+                "name": "name",
+                "type": "string",
+                "value": "={{ $json.name }}"
+              },
+              {
+                "id": "nw2",
+                "name": "phone",
+                "type": "string",
+                "value": "={{ $json.phone }}"
+              },
+              {
+                "id": "nw3",
+                "name": "address",
+                "type": "string",
+                "value": "={{ $json.address }}"
+              },
+              {
+                "id": "nw4",
+                "name": "rating",
+                "type": "string",
+                "value": "={{ $json.rating }}"
+              },
+              {
+                "id": "nw5",
+                "name": "has_website",
+                "type": "string",
+                "value": "={{ $json.has_website }}"
+              },
+              {
+                "id": "nw6",
+                "name": "website",
+                "type": "string",
+                "value": "={{ $json.website }}"
+              },
+              {
+                "id": "nw7",
+                "name": "email",
+                "type": "string",
+                "value": ""
+              },
+              {
+                "id": "nw8",
+                "name": "linkedin_url",
+                "type": "string",
+                "value": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "e8291a01-0004-4000-8000-000000000004",
+        "name": "Format Non-Website Lead",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1400,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "aggregate": "aggregateAllItemData",
+          "destinationFieldName": "leads",
+          "options": {}
+        },
+        "id": "3bfb73cc-c4b7-4000-b5f1-9d995cfb69c5",
+        "name": "Aggregate Leads",
+        "type": "n8n-nodes-base.aggregate",
+        "typeVersion": 1,
+        "position": [
+          1800,
+          64
+        ],
+        "notes": "Combines every not-yet-contacted lead into a single array under 'leads', so the whole list can be returned to the frontend in one response."
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ success: true, count: ($json.leads || []).length, leads: $json.leads || [] }) }}",
+          "options": {}
+        },
+        "id": "03a44a82-e3b7-45aa-a866-bd2b9e41061a",
+        "name": "Respond With Leads",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          1376,
+          192
+        ],
+        "notes": "If NO leads matched the filter (0 kept), Aggregate Leads may output zero items — that's why response body uses ($json.leads || []) as a safety fallback."
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "unbias-send-message",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "200e3e07-b4e6-45e9-a81b-f13c34853c7d",
+        "name": "Webhook - Send Message",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1040,
+          592
+        ],
+        "webhookId": "unbias-send-message",
+        "notes": "Frontend calls this when the user clicks 'Send' on one specific lead from the list. POST body: { \"name\": \"...\", \"phone\": \"...\", \"address\": \"...\" } — exactly the fields Respond With Leads returned for that lead."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "m1",
+                "name": "business_name",
+                "type": "string",
+                "value": "={{$json.body.name}}"
+              },
+              {
+                "id": "m2",
+                "name": "whatsapp_to",
+                "type": "string",
+                "value": "={{$json.body.phone.replace(/[^0-9]/g,'')}}"
+              },
+              {
+                "id": "m3",
+                "name": "lead_address",
+                "type": "string",
+                "value": "={{$json.body.address}}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "490ae580-dfa2-409c-8099-e2e0364e22e6",
+        "name": "Build Message",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -848,
+          688
+        ],
+        "notes": "Now reads directly from the Send Message webhook's body instead of an upstream search node, since this branch handles one lead at a time on demand."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://graph.facebook.com/v19.0/YOUR_META_PHONE_NUMBER_ID/messages",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer YOUR_META_WHATSAPP_TOKEN"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"template\",\n  \"template\": {{ JSON.stringify($json.template_object) }}\n}",
+          "options": {}
+        },
+        "id": "8a963874-b1b7-41aa-87b6-b200e8316fcd",
+        "name": "Send WhatsApp Template",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -464,
+          672
+        ],
+        "onError": "continueRegularOutput",
+        "notes": "onError is set to continue instead of stopping the whole execution, so a failed send (e.g. billing, template issue) still lets us respond to the frontend with a clear failure message instead of a dead webhook."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "s1",
+                "leftValue": "={{$json.error}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "empty"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "12aae799-dd16-438b-9ec7-58255df7c652",
+        "name": "IF Send Success",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -272,
+          688
+        ],
+        "notes": "True branch (no error) -> log to sheet + success response. False branch -> failure response, skips logging so we don't record a message as 'sent' when it actually failed."
+      },
+      {
+        "parameters": {
+          "operation": "append",
+          "documentId": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_SHEET_ID",
+            "mode": "id"
+          },
+          "sheetName": {
+            "value": "Leads",
+            "mode": "name"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "name": "={{$('Build Message').item.json.business_name}}",
+              "phone": "={{$('Build Message').item.json.whatsapp_to}}",
+              "address": "={{$('Build Message').item.json.lead_address}}",
+              "status": "sent",
+              "date_contacted": "={{$now.toISO()}}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "name",
+                "displayName": "name",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "phone",
+                "displayName": "phone",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "address",
+                "displayName": "address",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "date_contacted",
+                "displayName": "date_contacted",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "75f36996-a9bf-4a3d-aa33-f2b6770a79e9",
+        "name": "Log Outreach",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          -32,
+          512
+        ],
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "WTiUWTnguvHq2SFe",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"phone\": \"+{{$('Build Message').item.json.whatsapp_to}}\",\n  \"business_name\": \"{{$('Build Message').item.json.business_name}}\",\n  \"address\": \"{{$('Build Message').item.json.lead_address}}\",\n  \"status\": \"CONTACTED\",\n  \"last_contact_at\": \"{{new Date().toISOString()}}\"\n}",
+          "options": {}
+        },
+        "id": "a6d34a75-8297-4728-b911-0f3abae027dd",
+        "name": "Upsert Lead (Supabase)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          208,
+          640
+        ],
+        "onError": "continueRegularOutput",
+        "notes": "Upserts the sent lead to Supabase database with CONTACTED status."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/conversations",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"lead_id\": \"{{$node['Upsert Lead (Supabase)'].json[0]?.id || $node['Upsert Lead (Supabase)'].json.id}}\",\n  \"direction\": \"OUTBOUND\",\n  \"message\": \"Template message sent\",\n  \"message_type\": \"template\",\n  \"status\": \"sent\",\n  \"wamid\": \"{{$node['Send WhatsApp Template'].json.messages?.[0]?.id}}\"\n}",
+          "options": {}
+        },
+        "id": "a2194d70-adb4-40ce-b212-471c39f29ffb",
+        "name": "Save Outbound Conversation (Supabase)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          496,
+          624
+        ],
+        "onError": "continueRegularOutput",
+        "notes": "Logs outbound message in Supabase conversations table."
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ success: true, message: 'Message sent to ' + $('Build Message').item.json.business_name }) }}",
+          "options": {}
+        },
+        "id": "2ec4ac34-103a-47e1-a2d4-c950ea2491b8",
+        "name": "Respond - Send Success",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          832,
+          640
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ success: false, message: 'Send failed: ' + ($json.error || 'unknown error') }) }}",
+          "options": {}
+        },
+        "id": "9128c2f6-7568-4447-974a-93a4e3fd763d",
+        "name": "Respond - Send Failure",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          -16,
+          800
+        ]
+      },
+      {
+        "parameters": {
+          "path": "unbias-lead-stats",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "f9fe1572-e8cc-4068-8965-cda751bdd91b",
+        "name": "Webhook - Get Stats",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1040,
+          1104
+        ],
+        "webhookId": "unbias-lead-stats",
+        "notes": "Frontend calls this on page load (and after each send) to display the monthly message counter. GET, no body needed."
+      },
+      {
+        "parameters": {
+          "documentId": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_SHEET_ID",
+            "mode": "id"
+          },
+          "sheetName": {
+            "__rl": true,
+            "value": "Leads",
+            "mode": "name"
+          },
+          "options": {}
+        },
+        "id": "33ed8a24-070c-4f04-9f76-5f1b2f969578",
+        "name": "Get All Leads",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          -816,
+          1072
+        ],
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "WTiUWTnguvHq2SFe",
+            "name": "Google Sheets account"
+          }
+        },
+        "notes": "No filter set -> returns every row in the Leads sheet, which we then count by month in the next node."
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\nconst now = new Date();\nconst y = now.getFullYear();\nconst m = now.getMonth();\nlet sentThisMonth = 0;\nconst totalLogged = items.length;\nfor (const item of items) {\n  const d = item.json.date_contacted;\n  if (!d) continue;\n  const dt = new Date(d);\n  if (dt.getFullYear() === y && dt.getMonth() === m && item.json.status === 'sent') {\n    sentThisMonth++;\n  }\n}\nreturn [{ json: { sent_this_month: sentThisMonth, total_logged: totalLogged } }];"
+        },
+        "id": "2d99c7b5-0b2e-449f-93ae-cd4e68e1b352",
+        "name": "Count This Month",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -592,
+          1072
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ success: true, sent_this_month: $json.sent_this_month, total_logged: $json.total_logged }) }}",
+          "options": {}
+        },
+        "id": "072f6710-7631-4ecf-b4e3-1adc19d8452f",
+        "name": "Respond - Stats",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          -368,
+          1104
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "458b7518-a6b0-4cb0-adf2-051bce3a5177",
+                "name": "lead_name",
+                "value": "={{$json.result.name || 'Unnamed Business'}}",
+                "type": "string"
+              },
+              {
+                "id": "077df031-f47b-4660-86a8-5c063b7f9a87",
+                "name": "lead_phone",
+                "value": "={{$json.result.international_phone_number}}",
+                "type": "string"
+              },
+              {
+                "id": "301a1624-1d24-4d9c-b08f-b5baeb4218cd",
+                "name": "lead_address",
+                "value": "={{$json.result.formatted_address}}",
+                "type": "string"
+              },
+              {
+                "id": "d4fa93fc-60c0-4e9a-a275-f4abe036066f",
+                "name": "lead_rating",
+                "value": "={{$json.result.rating || 'N/A'}}\n",
+                "type": "string"
+              },
+              {
+                "id": "7ef79c2c-15ea-49ab-9c0c-6642c002214c",
+                "name": "=has_website",
+                "value": "={{ $json.result.website ? 'true' : 'false' }}",
+                "type": "string"
+              },
+              {
+                "id": "f2309e04-cd50-4a88-b4d0-b6e3163f1087",
+                "name": "website_url",
+                "value": "={{$json.result.website || ''}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          192,
+          160
+        ],
+        "id": "32f775f3-844b-4154-9132-6384897f3053",
+        "name": "Prep Lead Fields"
+      },
+      {
+        "parameters": {
+          "aggregate": "aggregateAllItemData",
+          "destinationFieldName": "prepped_leads",
+          "options": {}
+        },
+        "id": "fd599836-2779-433b-b325-7f57de1581a7",
+        "name": "Aggregate Prepped Leads",
+        "type": "n8n-nodes-base.aggregate",
+        "typeVersion": 1,
+        "position": [
+          432,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "documentId": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_SHEET_ID",
+            "mode": "id"
+          },
+          "sheetName": {
+            "__rl": true,
+            "value": "Leads",
+            "mode": "name"
+          },
+          "options": {}
+        },
+        "id": "971a54c1-abb7-45c0-9b53-cee04572ca01",
+        "name": "Get Contacted Phones",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          640,
+          160
+        ],
+        "alwaysOutputData": true,
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "WTiUWTnguvHq2SFe",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// All prepped leads from this run (single aggregated item)\nconst preppedLeads = $('Aggregate Prepped Leads').first().json.prepped_leads || [];\n\n// Every row currently in the Leads sheet (this node's own input)\nconst contactedRows = $input.all();\nconst contactedPhones = new Set(\n  contactedRows\n    .map(item => (item.json.phone || '').toString().trim())\n    .filter(p => p.length > 0)\n);\n\n// Keep only leads that have a phone and are NOT already in the sheet\nconst newLeads = preppedLeads.filter(lead => {\n  const phone = (lead.lead_phone || '').toString().trim();\n  return phone.length > 0 && !contactedPhones.has(phone);\n});\n\nreturn newLeads.map(lead => ({ json: lead }));"
+        },
+        "id": "09f1c3c1-deb6-413c-8748-79ff32cfa5eb",
+        "name": "Filter New Leads",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          848,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $('Webhook - Send Message').item.json.body;\n\nconst templateName = body.template_name || 'first_outreach';\n\nconst parameters = templateName === 'website_automation_pitch_v2'\n  ? [\n      { type: 'text', text: String(body.name || 'there') },\n      { type: 'text', text: String(body.website || 'your website') }\n    ]\n  : [\n      { type: 'text', text: String(body.name || 'there') }\n    ];\n\nconst template_object = {\n  name: templateName,\n  language: { code: 'en' },\n  components: [\n    { type: 'body', parameters }\n  ]\n};\n\nreturn [{\n  json: {\n    ...$input.item.json,\n    template_object\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -640,
+          608
+        ],
+        "id": "3e3660a2-e67c-4fe8-83a2-b70fc2674043",
+        "name": "Code in JavaScript"
+      }
+    ],
+    "pinData": {},
+    "connections": {
+      "Lead Search Form": {
+        "main": [
+          [
+            {
+              "node": "Search Params",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Search Params": {
+        "main": [
+          [
+            {
+              "node": "Google Places Text Search",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google Places Text Search": {
+        "main": [
+          [
+            {
+              "node": "Split Places",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Places": {
+        "main": [
+          [
+            {
+              "node": "Place Details",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Place Details": {
+        "main": [
+          [
+            {
+              "node": "Filter: No Website + Has Phone",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter: No Website + Has Phone": {
+        "main": [
+          [
+            {
+              "node": "Prep Lead Fields",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Lead": {
+        "main": [
+          [
+            {
+              "node": "If Has Website",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If Has Website": {
+        "main": [
+          [
+            {
+              "node": "Direct Website Fetch",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Format Non-Website Lead",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Direct Website Fetch": {
+        "main": [
+          [
+            {
+              "node": "Extract Website Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Website Email": {
+        "main": [
+          [
+            {
+              "node": "Format Scraped Lead",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Scraped Lead": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Non-Website Lead": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Leads": {
+        "main": [
+          [
+            {
+              "node": "Respond With Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook - Send Message": {
+        "main": [
+          [
+            {
+              "node": "Build Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Message": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send WhatsApp Template": {
+        "main": [
+          [
+            {
+              "node": "IF Send Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "IF Send Success": {
+        "main": [
+          [
+            {
+              "node": "Log Outreach",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond - Send Failure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Outreach": {
+        "main": [
+          [
+            {
+              "node": "Upsert Lead (Supabase)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert Lead (Supabase)": {
+        "main": [
+          [
+            {
+              "node": "Save Outbound Conversation (Supabase)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Outbound Conversation (Supabase)": {
+        "main": [
+          [
+            {
+              "node": "Respond - Send Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook - Get Stats": {
+        "main": [
+          [
+            {
+              "node": "Get All Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get All Leads": {
+        "main": [
+          [
+            {
+              "node": "Count This Month",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Count This Month": {
+        "main": [
+          [
+            {
+              "node": "Respond - Stats",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prep Lead Fields": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Prepped Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Prepped Leads": {
+        "main": [
+          [
+            {
+              "node": "Get Contacted Phones",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Contacted Phones": {
+        "main": [
+          [
+            {
+              "node": "Filter New Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter New Leads": {
+        "main": [
+          [
+            {
+              "node": "Format Lead",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Send WhatsApp Template",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": true,
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate"
+    },
+    "versionId": "4082a622-0e74-4dba-a8d9-2700a5bc6d37",
+    "meta": {
+      "instanceId": "ab0acde4517c7ed13e405ca24b1ffb7b6a7a79396124d08dd06950946fd60669"
+    },
+    "id": "CVdd8BGfZ0OzJFnq",
+    "tags": []
+  }

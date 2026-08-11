@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>unbias.xai — Lead Gen + WhatsApp Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Design tokens ── */
+  :root {
+    --bg: #08090b;
+    --panel: rgba(255, 255, 255, 0.03);
+    --panel-hover: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-focus: rgba(255, 255, 255, 0.35);
+    --text: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.60);
+    --accent: #ffffff;
+    --accent-hover: rgba(255, 255, 255, 0.9);
+    --accent-dim: rgba(255, 255, 255, 0.04);
+    --success: #34d399;
+    --success-dim: rgba(52, 211, 153, 0.12);
+    --error: #ef4444;
+    --error-dim: rgba(239, 68, 68, 0.10);
+    --warn: #fbbf24;
+
+    /* Spacing scale */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+
+    /* Type scale */
+    --fs-xs: 0.75rem;   /* 12px */
+    --fs-sm: 0.875rem;  /* 14px */
+    --fs-base: 1rem;    /* 16px */
+    --fs-lg: 1.25rem;   /* 20px */
+    --fs-xl: 1.5rem;    /* 24px */
+
+    /* Shared radii */
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: var(--fs-base);
+    font-weight: 400;
+    line-height: 1.5;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+
+  /* ── Three.js canvas ── */
+  #bgCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ── Layout ── */
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--sp-8) var(--sp-4) 64px;
+  }
+
+  /* ── Page header ── */
+  .page-header {
+    margin-bottom: var(--sp-6);
+  }
+  .page-header h1 {
+    font-size: var(--fs-lg);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: var(--sp-1);
+  }
+  .page-header .subtitle {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-6);
+  }
+  .stat-card {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-4);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .stat-card .num {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.2;
+  }
+  .stat-card .label {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    margin-top: var(--sp-1);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Panel (shared) ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-5);
+    margin-bottom: var(--sp-6);
+  }
+
+  /* ── Connection header ── */
+  .conn-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .conn-header h3 {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .conn-header h3 svg {
+    width: 16px; height: 16px;
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+  .conn-right {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .conn-status {
+    font-size: var(--fs-xs);
+    padding: 2px 10px;
+    border-radius: 20px;
+    background: #1f2330;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .conn-status.connected {
+    background: var(--success-dim);
+    color: var(--success);
+  }
+  .chevron {
+    transition: transform 0.2s ease;
+    color: var(--text-secondary);
+    font-size: var(--fs-sm);
+    line-height: 1;
+  }
+  .chevron.open { transform: rotate(180deg); }
+  .conn-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+  }
+  .conn-body.open {
+    max-height: 320px;
+    margin-top: var(--sp-4);
+  }
+
+  /* ── Form elements ── */
+  label {
+    display: block;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--sp-1);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  label + label { margin-top: var(--sp-4); }
+
+  .form-group {
+    margin-bottom: var(--sp-4);
+  }
+  .form-group:last-of-type {
+    margin-bottom: 0;
+  }
+
+  input[type="text"],
+  input[type="url"],
+  select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px var(--sp-3);
+    color: var(--text);
+    font-size: var(--fs-sm);
+    font-family: inherit;
+    transition: border-color 0.15s ease;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--border-focus);
+  }
+  input::placeholder { color: #4a4f5c; }
+
+  /* ── Buttons ── */
+  button {
+    font-family: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: none;
+    padding: 10px var(--sp-4);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    line-height: 1.4;
+  }
+  .row-btn {
+    display: flex;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #0b1a12;
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-base);
+    margin-top: var(--sp-5);
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled {
+    background: #262a34;
+    color: var(--text-secondary);
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: #1c2029;
+    color: var(--text);
+    flex: 1;
+  }
+  .btn-secondary:hover { background: #262a34; }
+
+  .hint {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    margin-top: var(--sp-3);
+    line-height: 1.5;
+  }
+
+  /* ── Config warning ── */
+  .config-warning {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius);
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-6);
+    font-size: var(--fs-sm);
+    color: #f59e0b;
+    display: none;
+  }
+  .config-warning.show { display: block; }
+
+  /* ── Status banner ── */
+  #status {
+    margin-top: var(--sp-4);
+    font-size: var(--fs-sm);
+    padding: 10px var(--sp-3);
+    border-radius: var(--radius);
+    display: none;
+  }
+  #status.show { display: block; }
+  #status.loading { background: var(--accent-dim); color: #7be3a5; }
+  #status.error { background: var(--error-dim); color: #ff8080; }
+
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid rgba(123,227,165,0.3);
+    border-top-color: #7be3a5;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin-right: var(--sp-2);
+    vertical-align: -1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Leads sections ── */
+  .leads-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: var(--sp-8) 0 var(--sp-3);
+  }
+  .leads-header:first-child { margin-top: var(--sp-6); }
+  .leads-header h2 {
+    font-size: var(--fs-base);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .leads-header h2 svg {
+    width: 16px; height: 16px;
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+  .leads-header span {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  /* ── Lead card ── */
+  .lead-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-4);
+    margin-bottom: var(--sp-3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-4);
+    transition: border-color 0.15s ease;
+  }
+  .lead-card:hover {
+    border-color: #2a2e3a;
+  }
+  .lead-info { flex: 1; min-width: 0; }
+  .lead-name {
+    font-weight: 600;
+    font-size: var(--fs-sm);
+    margin-bottom: 2px;
+    line-height: 1.4;
+  }
+  .lead-detail {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  .lead-detail a {
+    color: #7be3a5;
+    text-decoration: none;
+  }
+  .lead-detail a:hover { text-decoration: underline; }
+  .lead-detail .rating { color: var(--warn); }
+
+  .send-btn {
+    background: var(--accent);
+    color: #0b1a12;
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .send-btn:hover { background: var(--accent-hover); }
+  .send-btn:disabled {
+    background: #262a34;
+    color: var(--text-secondary);
+    cursor: not-allowed;
+  }
+  .send-btn.sent {
+    background: var(--success-dim);
+    color: var(--success);
+  }
+  .send-btn.failed {
+    background: var(--error-dim);
+    color: #ff8080;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: var(--fs-sm);
+    padding: var(--sp-8) var(--sp-4);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 480px) {
+    .wrap { padding: var(--sp-4) var(--sp-3) 48px; }
+    .stats-bar { flex-direction: column; }
+    .lead-card { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
+    .send-btn { width: 100%; text-align: center; }
+    .top-nav { padding: var(--sp-3) var(--sp-4); }
+  }
+
+  /* ── Top nav ── */
+  .top-nav {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-5) var(--sp-6);
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .top-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 700;
+    font-size: var(--fs-base);
+    letter-spacing: 0.02em;
+  }
+  .top-nav-brand svg {
+    width: 16px;
+    height: 16px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .top-nav-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 6px 14px;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .top-nav-back:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .top-nav-back svg {
+    width: 14px;
+    height: 14px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<!-- Top navigation -->
+<nav class="top-nav">
+  <a href="index.html" class="top-nav-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="5" cy="12" r="2" fill="currentColor"/>
+      <circle cx="19" cy="6" r="2" fill="currentColor"/>
+      <circle cx="19" cy="18" r="2" fill="currentColor"/>
+      <line x1="7" y1="11" x2="17" y2="7"/>
+      <line x1="7" y1="13" x2="17" y2="17"/>
+    </svg>
+    unbias.xai
+  </a>
+  <a href="index.html" class="top-nav-back">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"/>
+      <polyline points="12 19 5 12 12 5"/>
+    </svg>
+    Back to Home
+  </a>
+</nav>
+
+<div class="wrap">
+
+  <div class="page-header">
+    <h1>Lead Generation + Outreach</h1>
+    <div class="subtitle">Search leads, review, and send outreach messages</div>
+  </div>
+
+  <!-- Config warning — shown if config.js is missing -->
+  <div class="config-warning" id="configWarning">
+    Configuration not found. Create <strong>config.js</strong> from <strong>config.example.js</strong> and set your webhook URLs.
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="num" id="sentThisMonth">&mdash;</div>
+      <div class="label">Sent this month</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" id="totalLogged">&mdash;</div>
+      <div class="label">Total logged</div>
+    </div>
+  </div>
+
+  <!-- Connection Panel -->
+  <div class="panel">
+    <div class="conn-header" id="connHeader">
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Workflow Connection
+      </h3>
+      <div class="conn-right">
+        <span class="conn-status" id="connStatus">Not connected</span>
+        <span class="chevron" id="chevron">&#9662;</span>
+      </div>
+    </div>
+    <div class="conn-body" id="connBody">
+      <div class="form-group">
+        <label for="searchUrl">Search webhook URL</label>
+        <input type="url" id="searchUrl" placeholder="Loaded from config.js">
+      </div>
+      <div class="form-group">
+        <label for="sendUrl">Send message webhook URL</label>
+        <input type="url" id="sendUrl" placeholder="Loaded from config.js">
+      </div>
+      <div class="form-group">
+        <label for="statsUrl">Statistics webhook URL</label>
+        <input type="url" id="statsUrl" placeholder="Loaded from config.js">
+      </div>
+      <div class="row-btn">
+        <button class="btn-secondary" id="saveUrlBtn">Save Override</button>
+        <button class="btn-secondary" id="clearUrlBtn">Reset to Config</button>
+      </div>
+      <div class="hint">
+        URLs are loaded from <strong>config.js</strong>. You can override them here (stored in localStorage). Use "Reset to Config" to revert to config.js values.
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Form -->
+  <div class="panel">
+    <div class="form-group">
+      <label for="businessType">Business type</label>
+      <select id="businessType">
+        <option value="Restaurant">Restaurant</option>
+        <option value="Hair salon">Hair salon</option>
+        <option value="Dentist">Dentist</option>
+        <option value="Gym">Gym</option>
+        <option value="Bakery">Bakery</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div id="otherWrap" style="display:none;">
+      <div class="form-group">
+        <label for="businessTypeOther">Specify business type</label>
+        <input type="text" id="businessTypeOther" placeholder="e.g. pet groomer">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="location">City / Country</label>
+      <input type="text" id="location" placeholder="e.g. Guwahati, India">
+    </div>
+    <button class="btn-primary" id="searchBtn">Search for Leads</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- Leads List -->
+  <div id="leadsSection" style="display:none;">
+    <div class="leads-header">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        No Website — Outreach Targets
+      </h2>
+      <span id="noWebsiteCount"></span>
+    </div>
+    <div id="noWebsiteList"></div>
+
+    <div class="leads-header" style="margin-top:var(--sp-8);">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Has Existing Website
+      </h2>
+      <span id="hasWebsiteCount"></span>
+    </div>
+    <div id="hasWebsiteList"></div>
+  </div>
+
+</div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- Runtime config (gitignored — created from config.example.js) -->
+<script src="config.js"></script>
+
+<script>
+  /* ── Three.js ambient background ── */
+  (function initBackground() {
+    const canvas = document.getElementById('bgCanvas');
+    if (!canvas) return;
+
+    let renderer, scene, camera, points, lines;
+    let animationId;
+    const NODE_COUNT = 60;
+    const CONNECTION_DISTANCE = 2.8;
+
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    } catch (e) {
+      canvas.style.display = 'none';
+      return;
+    }
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 8;
+
+    const positions = new Float32Array(NODE_COUNT * 3);
+    const velocities = [];
+    for (let i = 0; i < NODE_COUNT; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * 10;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 8;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 6;
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.003,
+        y: (Math.random() - 0.5) * 0.003,
+        z: (Math.random() - 0.5) * 0.002
+      });
+    }
+
+    const pointGeo = new THREE.BufferGeometry();
+    pointGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const pointMat = new THREE.PointsMaterial({
+      color: 0x25d366, size: 0.04, transparent: true, opacity: 0.45, sizeAttenuation: true
+    });
+    points = new THREE.Points(pointGeo, pointMat);
+    scene.add(points);
+
+    const lineGeo = new THREE.BufferGeometry();
+    const maxLines = NODE_COUNT * NODE_COUNT;
+    const linePositions = new Float32Array(maxLines * 6);
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x25d366, transparent: true, opacity: 0.06 });
+    lines = new THREE.LineSegments(lineGeo, lineMat);
+    scene.add(lines);
+
+    function updateLines() {
+      const pos = points.geometry.attributes.position.array;
+      let idx = 0;
+      for (let i = 0; i < NODE_COUNT; i++) {
+        for (let j = i + 1; j < NODE_COUNT; j++) {
+          const dx = pos[i*3] - pos[j*3];
+          const dy = pos[i*3+1] - pos[j*3+1];
+          const dz = pos[i*3+2] - pos[j*3+2];
+          const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+          if (dist < CONNECTION_DISTANCE) {
+            linePositions[idx++] = pos[i*3];
+            linePositions[idx++] = pos[i*3+1];
+            linePositions[idx++] = pos[i*3+2];
+            linePositions[idx++] = pos[j*3];
+            linePositions[idx++] = pos[j*3+1];
+            linePositions[idx++] = pos[j*3+2];
+          }
+        }
+      }
+      for (let k = idx; k < linePositions.length; k++) linePositions[k] = 0;
+      lines.geometry.attributes.position.needsUpdate = true;
+      lines.geometry.setDrawRange(0, idx / 3);
+    }
+
+    function animate() {
+      animationId = requestAnimationFrame(animate);
+      const pos = points.geometry.attributes.position.array;
+      for (let i = 0; i < NODE_COUNT; i++) {
+        pos[i*3]   += velocities[i].x;
+        pos[i*3+1] += velocities[i].y;
+        pos[i*3+2] += velocities[i].z;
+        if (Math.abs(pos[i*3])   > 5.5) velocities[i].x *= -1;
+        if (Math.abs(pos[i*3+1]) > 4.5) velocities[i].y *= -1;
+        if (Math.abs(pos[i*3+2]) > 3.5) velocities[i].z *= -1;
+      }
+      points.geometry.attributes.position.needsUpdate = true;
+      updateLines();
+      points.rotation.y += 0.0003;
+      lines.rotation.y += 0.0003;
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  })();
+
+  /* ── Application Logic ── */
+  const STORAGE_KEY = 'unbias_leadgen_urls';
+
+  const connHeader = document.getElementById('connHeader');
+  const connBody = document.getElementById('connBody');
+  const chevron = document.getElementById('chevron');
+  const connStatus = document.getElementById('connStatus');
+  const searchUrlInput = document.getElementById('searchUrl');
+  const sendUrlInput = document.getElementById('sendUrl');
+  const statsUrlInput = document.getElementById('statsUrl');
+  const saveUrlBtn = document.getElementById('saveUrlBtn');
+  const clearUrlBtn = document.getElementById('clearUrlBtn');
+  const searchBtn = document.getElementById('searchBtn');
+  const statusEl = document.getElementById('status');
+  const businessType = document.getElementById('businessType');
+  const otherWrap = document.getElementById('otherWrap');
+  const leadsSection = document.getElementById('leadsSection');
+  const noWebsiteList = document.getElementById('noWebsiteList');
+  const noWebsiteCount = document.getElementById('noWebsiteCount');
+  const hasWebsiteList = document.getElementById('hasWebsiteList');
+  const hasWebsiteCount = document.getElementById('hasWebsiteCount');
+  const sentThisMonthEl = document.getElementById('sentThisMonth');
+  const totalLoggedEl = document.getElementById('totalLogged');
+  const configWarning = document.getElementById('configWarning');
+
+  // ── Read URLs: localStorage override → config.js → empty ──
+  function getConfigUrls() {
+    const cfg = window.__CONFIG__ || {};
+    return {
+      search: cfg.SEARCH_URL || '',
+      send:   cfg.SEND_URL   || '',
+      stats:  cfg.STATS_URL  || ''
+    };
+  }
+
+  function getUrls() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (stored && stored.search && stored.send && stored.stats) return stored;
+    } catch {}
+    return getConfigUrls();
+  }
+
+  function hasConfig() {
+    const cfg = getConfigUrls();
+    return !!(cfg.search && cfg.send && cfg.stats);
+  }
+
+  function loadUrls() {
+    if (!window.__CONFIG__) {
+      configWarning.classList.add('show');
+    }
+
+    const urls = getUrls();
+    searchUrlInput.value = urls.search;
+    sendUrlInput.value = urls.send;
+    statsUrlInput.value = urls.stats;
+
+    if (urls.search && urls.send && urls.stats) {
+      connStatus.textContent = 'Connected';
+      connStatus.classList.add('connected');
+      fetchStats();
+    } else {
+      connBody.classList.add('open');
+      chevron.classList.add('open');
+    }
+  }
+
+  connHeader.addEventListener('click', () => {
+    connBody.classList.toggle('open');
+    chevron.classList.toggle('open');
+  });
+
+  saveUrlBtn.addEventListener('click', () => {
+    const search = searchUrlInput.value.trim();
+    const send = sendUrlInput.value.trim();
+    const stats = statsUrlInput.value.trim();
+    if (!search || !send || !stats) { alert('All three webhook URLs are required.'); return; }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ search, send, stats }));
+    connStatus.textContent = 'Connected';
+    connStatus.classList.add('connected');
+    connBody.classList.remove('open');
+    chevron.classList.remove('open');
+    fetchStats();
+  });
+
+  clearUrlBtn.addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_KEY);
+    const cfg = getConfigUrls();
+    searchUrlInput.value = cfg.search;
+    sendUrlInput.value = cfg.send;
+    statsUrlInput.value = cfg.stats;
+    if (cfg.search && cfg.send && cfg.stats) {
+      connStatus.textContent = 'Connected';
+      connStatus.classList.add('connected');
+      fetchStats();
+    } else {
+      connStatus.textContent = 'Not connected';
+      connStatus.classList.remove('connected');
+    }
+  });
+
+  businessType.addEventListener('change', () => {
+    otherWrap.style.display = businessType.value === 'Other' ? 'block' : 'none';
+  });
+
+  function setStatus(type, message) {
+    statusEl.className = 'show ' + type;
+    statusEl.innerHTML = type === 'loading' ? `<span class="spinner"></span>${message}` : message;
+  }
+  function clearStatus() { statusEl.className = ''; statusEl.innerHTML = ''; }
+
+  async function fetchStats() {
+    const urls = getUrls();
+    if (!urls.stats) return;
+    try {
+      const res = await fetch(urls.stats);
+      const data = await res.json();
+      sentThisMonthEl.textContent = data.sent_this_month ?? '—';
+      totalLoggedEl.textContent = data.total_logged ?? '—';
+    } catch (e) {
+      // Silent fail on stats — not critical to the main flow
+    }
+  }
+
+  let leadsByPhone = {};
+
+  function buildLeadCard(lead, isTarget) {
+    const card = document.createElement('div');
+    card.className = 'lead-card';
+    const websiteLine = lead.website
+      ? `<div class="lead-detail"><a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">${escapeHtml(lead.website)}</a></div>`
+      : '';
+    card.innerHTML = `
+      <div class="lead-info">
+        <div class="lead-name">${escapeHtml(lead.name || 'Unnamed Business')}</div>
+        <div class="lead-detail">${escapeHtml(lead.phone || 'No phone')} · <span class="rating">${escapeHtml(String(lead.rating ?? 'N/A'))}</span></div>
+        <div class="lead-detail">${escapeHtml(lead.address || '')}</div>
+        ${websiteLine}
+      </div>
+      <button class="send-btn" data-phone="${escapeHtml(lead.phone || '')}">${isTarget ? 'Send' : 'Contact'}</button>
+    `;
+    return card;
+  }
+
+  function renderLeads(leads) {
+    leadsSection.style.display = 'block';
+    noWebsiteList.innerHTML = '';
+    hasWebsiteList.innerHTML = '';
+    leadsByPhone = {};
+
+    const noSite = leads.filter(l => l.has_website !== 'true');
+    const hasSite = leads.filter(l => l.has_website === 'true');
+
+    noWebsiteCount.textContent = `${noSite.length} found`;
+    hasWebsiteCount.textContent = `${hasSite.length} found`;
+
+    leads.forEach(l => { if (l.phone) leadsByPhone[l.phone] = l; });
+
+    if (noSite.length === 0) {
+      noWebsiteList.innerHTML = '<div class="empty-state">No outreach targets found for this search.</div>';
+    } else {
+      noSite.forEach(lead => noWebsiteList.appendChild(buildLeadCard(lead, true)));
+    }
+
+    if (hasSite.length === 0) {
+      hasWebsiteList.innerHTML = '<div class="empty-state">No results with an existing website for this search.</div>';
+    } else {
+      hasSite.forEach(lead => hasWebsiteList.appendChild(buildLeadCard(lead, false)));
+    }
+
+    document.querySelectorAll('.send-btn').forEach(btn => {
+      btn.addEventListener('click', () => sendMessage(leadsByPhone[btn.dataset.phone], btn));
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function sendMessage(lead, btn) {
+    const urls = getUrls();
+    if (!urls.send) { alert('Connect your workflow first.'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const res = await fetch(urls.send, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: lead.name, phone: lead.phone, address: lead.address })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        btn.textContent = 'Sent';
+        btn.classList.add('sent');
+        fetchStats();
+      } else {
+        btn.textContent = 'Failed';
+        btn.classList.add('failed');
+        btn.disabled = false;
+        console.error(data.message);
+      }
+    } catch (err) {
+      btn.textContent = 'Failed';
+      btn.classList.add('failed');
+      btn.disabled = false;
+      console.error(err);
+    }
+  }
+
+  searchBtn.addEventListener('click', async () => {
+    const urls = getUrls();
+    const type = businessType.value === 'Other'
+      ? document.getElementById('businessTypeOther').value.trim()
+      : businessType.value;
+    const location = document.getElementById('location').value.trim();
+
+    if (!urls.search) {
+      connBody.classList.add('open');
+      chevron.classList.add('open');
+      alert('Connect your workflow first — paste the webhook URLs above.');
+      return;
+    }
+    if (!type || !location) {
+      setStatus('error', 'Business type and city/country are required.');
+      return;
+    }
+
+    searchBtn.disabled = true;
+    leadsSection.style.display = 'none';
+    setStatus('loading', 'Searching for leads — this may take 20–40 seconds.');
+
+    try {
+      const res = await fetch(urls.search, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_type: businessType.value,
+          business_type_other: document.getElementById('businessTypeOther').value.trim(),
+          location: location
+        })
+      });
+
+      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+      const data = await res.json();
+
+      renderLeads(data.leads || []);
+      clearStatus();
+    } catch (err) {
+      setStatus('error', `Search failed: ${err.message}. Check the webhook URL and that the workflow is published.`);
+    } finally {
+      searchBtn.disabled = false;
+    }
+  });
+
+  loadUrls();
+</script>
+</body>
+</html>

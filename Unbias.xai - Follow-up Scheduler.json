@@ -1,0 +1,256 @@
+{
+  "name": "Unbias.xai - Follow-up Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "56f81d6d-612b-47d3-9156-d7941809ff14",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "Runs every 30 minutes to check for leads that need follow-up messages."
+    },
+    {
+      "parameters": {
+        "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads?status=eq.CONTACTED&last_reply_at=is.null&last_contact_at=lt.{{new Date(Date.now() - 24*60*60*1000).toISOString()}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "df2d94cc-53f5-4db9-b051-8259a54b7a37",
+      "name": "Get Stale Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "notes": "Queries Supabase ONLY for leads contacted 24+ hours ago that have NOT replied (last_reply_at IS NULL)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.all();\n\n// Double-safety filter: strictly exclude any lead that has replied or is not CONTACTED\nconst eligibleLeads = leads.filter(item => {\n  const lead = item.json;\n  const isContacted = lead.status === 'CONTACTED';\n  const hasNotReplied = !lead.last_reply_at;\n  const hasPhone = lead.phone || lead.phone_clean;\n  return isContacted && hasNotReplied && hasPhone;\n});\n\nif (eligibleLeads.length === 0) {\n  return [];\n}\n\nreturn eligibleLeads;"
+      },
+      "id": "c31113ec-47f5-4a0e-a3c2-7d9723344d6e",
+      "name": "Filter Eligible",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "alwaysOutputData": false,
+      "notes": "Filters strictly to unreplied CONTACTED leads."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/YOUR_META_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_WHATSAPP_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.phone_clean || $json.phone}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"first_outreach\",\n    \"language\": {\n      \"code\": \"en\"\n    },\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"{{$json.business_name}}\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+        "options": {}
+      },
+      "id": "13254264-b1ac-4f01-8050-3cc7836a8996",
+      "name": "Send Follow-up Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "Sends follow-up WhatsApp template ONLY to eligible unreplied leads."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads?id=eq.{{$item(0).$node[\"Filter Eligible\"].json.id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"FOLLOW_UP\",\n  \"last_contact_at\": \"{{$now.toISO()}}\",\n  \"followup_date\": \"{{ new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0] }}\"\n}",
+        "options": {}
+      },
+      "id": "1877b366-5bde-4260-bb12-2f07738140a3",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        0
+      ],
+      "notes": "Updates the lead status to FOLLOW_UP."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_id\": \"{{$item(0).$node['Filter Eligible'].json.id}}\",\n  \"direction\": \"OUTBOUND\",\n  \"message\": \"Follow-up template sent\",\n  \"message_type\": \"template\",\n  \"status\": \"sent\",\n  \"template_name\": \"first_outreach\"\n}",
+        "options": {}
+      },
+      "id": "377f0241-5ced-4cf9-bda6-1b217309dcc7",
+      "name": "Log Follow-up Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        0
+      ],
+      "notes": "Logs the follow-up message to the conversations table."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Stale Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stale Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter Eligible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Eligible": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Template": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Log Follow-up Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f37be3de-ef23-4475-9504-99f9258365ed",
+  "meta": {
+    "instanceId": "ab0acde4517c7ed13e405ca24b1ffb7b6a7a79396124d08dd06950946fd60669"
+  },
+  "id": "Ze1fu34dBEkCeAiH",
+  "tags": [
+    {
+      "updatedAt": "2026-08-05T15:14:39.580Z",
+      "createdAt": "2026-08-05T15:14:39.580Z",
+      "id": "6vEqyNgeULMQ2kaV",
+      "name": "unbias-crm"
+    }
+  ]
+}
