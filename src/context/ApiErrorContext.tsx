@@ -1,117 +1,83 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ApiErrorContextType {
   isServerUnreachable: boolean;
   lastSuccessfulUpdate: Date | null;
-  reportApiError: (error: any) => void;
-  recordSuccessfulFetch: () => void;
-  clearServerUnreachable: () => void;
   retryLastOperation: () => void;
-  setRetryHandler: (handler: () => void) => void;
 }
 
 const ApiErrorContext = createContext<ApiErrorContextType | undefined>(undefined);
 
+const LAST_SYNC_KEY = 'lead_scrapper_last_sync';
+
+/** True only for network-level failures and 5xx responses — never for 4xx/RLS/validation errors. */
+function isServerFailure(error: unknown): boolean {
+  if (!error) return false;
+  const e = error as { message?: unknown; status?: unknown; code?: unknown; statusCode?: unknown };
+  const message = String(e.message ?? error).toLowerCase();
+  const status = Number(e.status ?? e.statusCode ?? e.code);
+
+  const isNetwork =
+    error instanceof TypeError ||
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('network error') ||
+    message.includes('load failed') ||
+    message.includes('connection refused') ||
+    message.includes('econnrefused');
+
+  return isNetwork || (status >= 500 && status <= 599);
+}
+
+/**
+ * Watches every Supabase-backed query in the React Query cache. A network/5xx failure
+ * shows the full-screen "server unreachable" takeover; any success clears it.
+ */
 export function ApiErrorProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [isServerUnreachable, setIsServerUnreachable] = useState(false);
   const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState<Date | null>(() => {
-    const saved = localStorage.getItem('lead_scrapper_last_sync');
-    return saved ? new Date(saved) : new Date();
-  });
-  const [retryHandler, setRetryHandlerState] = useState<(() => void) | null>(null);
-
-  const recordSuccessfulFetch = useCallback(() => {
-    const now = new Date();
-    setLastSuccessfulUpdate(now);
-    localStorage.setItem('lead_scrapper_last_sync', now.toISOString());
-    setIsServerUnreachable(false);
-  }, []);
-
-  const reportApiError = useCallback((error: any) => {
-    if (!error) return;
-
-    // Log non-technical debug info to developer console
-    console.error('[API Error Intercepted]:', error.message || error);
-
-    const errorMessage = String(error.message || error || '').toLowerCase();
-    const status = error.status || error.code || error.statusCode;
-
-    // Network level failure (fetch throws TypeError / Failed to fetch / ngrok connection refused / CORS / offline)
-    const isNetworkFetchError =
-      error instanceof TypeError ||
-      errorMessage.includes('failed to fetch') ||
-      errorMessage.includes('networkerror') ||
-      errorMessage.includes('network error') ||
-      errorMessage.includes('load failed') ||
-      errorMessage.includes('connection refused') ||
-      errorMessage.includes('econnrefused');
-
-    // 5xx Server Error statuses (500, 502, 503, 504)
-    const is5xxStatus =
-      status === 500 ||
-      status === 502 ||
-      status === 503 ||
-      status === 504 ||
-      (typeof status === 'number' && status >= 500 && status <= 599);
-
-    // Only trigger full-screen ServerUnreachable takeover on true 5xx or network-level server failures,
-    // NOT on valid 4xx client errors (400, 401, 403, 404) or permission errors.
-    if (isNetworkFetchError || is5xxStatus) {
-      if (navigator.onLine) {
-        setIsServerUnreachable(true);
-      }
+    try {
+      const saved = localStorage.getItem(LAST_SYNC_KEY);
+      return saved ? new Date(saved) : null;
+    } catch {
+      return null;
     }
-  }, []);
+  });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      (window as any).__REPORT_API_ERROR__ = reportApiError;
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        delete (window as any).__REPORT_API_ERROR__;
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return;
+      const { action } = event;
+      if (action.type === 'success') {
+        const now = new Date();
+        setLastSuccessfulUpdate(now);
+        setIsServerUnreachable(false);
+        try { localStorage.setItem(LAST_SYNC_KEY, now.toISOString()); } catch { /* ignore */ }
+      } else if (action.type === 'error') {
+        console.error('[API error]', action.error);
+        if (isServerFailure(action.error) && navigator.onLine) setIsServerUnreachable(true);
       }
-    };
-  }, [reportApiError]);
-
-  const clearServerUnreachable = useCallback(() => {
-    setIsServerUnreachable(false);
-  }, []);
-
-  const setRetryHandler = useCallback((handler: () => void) => {
-    setRetryHandlerState(() => handler);
-  }, []);
+    });
+  }, [queryClient]);
 
   const retryLastOperation = useCallback(() => {
     setIsServerUnreachable(false);
-    if (retryHandler) {
-      retryHandler();
-    } else {
-      window.location.reload();
-    }
-  }, [retryHandler]);
+    queryClient.refetchQueries({ type: 'active' });
+  }, [queryClient]);
 
-  return (
-    <ApiErrorContext.Provider
-      value={{
-        isServerUnreachable,
-        lastSuccessfulUpdate,
-        reportApiError,
-        recordSuccessfulFetch,
-        clearServerUnreachable,
-        retryLastOperation,
-        setRetryHandler,
-      }}
-    >
-      {children}
-    </ApiErrorContext.Provider>
+  const value = useMemo(
+    () => ({ isServerUnreachable, lastSuccessfulUpdate, retryLastOperation }),
+    [isServerUnreachable, lastSuccessfulUpdate, retryLastOperation]
   );
+
+  return <ApiErrorContext.Provider value={value}>{children}</ApiErrorContext.Provider>;
 }
 
+// eslint-disable-next-line react/only-export-components
 export function useApiError() {
   const context = useContext(ApiErrorContext);
-  if (!context) {
-    throw new Error('useApiError must be used within an ApiErrorProvider');
-  }
+  if (!context) throw new Error('useApiError must be used within an ApiErrorProvider');
   return context;
 }

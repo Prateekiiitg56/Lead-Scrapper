@@ -1,16 +1,16 @@
-import { useLeadStats, useLeads } from '@/hooks/useLeads';
+import { useLeads } from '@/hooks/useLeads';
+import { computeLeadStats } from '@/services/leadService';
 import { useCountUp } from '@/hooks/useCountUp';
 import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
 import { Link } from 'react-router-dom';
 import {
   ChevronRight,
-  ChevronDown,
   MapPin,
   Layers,
   Bot,
   Calendar,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { timeAgo } from '@/lib/utils';
 
 function StatTickMarks({ count, colorClass }: { count: number; colorClass: string }) {
@@ -32,20 +32,17 @@ function StatTickMarks({ count, colorClass }: { count: number; colorClass: strin
 }
 
 export function DashboardPage() {
-  const { stats, loading } = useLeadStats();
-  const { leads: realLeads, loading: leadsLoading } = useLeads();
-  const [timeFilter, setTimeFilter] = useState('This Month');
+  const { leads: realLeads, loading: leadsLoading, error } = useLeads();
+  const [range, setRange] = useState<'month' | 'all'>('month');
 
-  const s = stats || {
-    total: 0,
-    new: 0,
-    contacted: 0,
-    replied: 0,
-    interested: 0,
-    follow_up: 0,
-    meeting_booked: 0,
-    client: 0,
-  };
+  // "This month" counts leads created since the 1st of the current month.
+  const s = useMemo(() => {
+    if (range === 'all') return computeLeadStats(realLeads);
+    const start = new Date();
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    return computeLeadStats(realLeads.filter((l) => new Date(l.created_at) >= start));
+  }, [realLeads, range]);
 
   const replyRate = s.contacted > 0 ? Math.round((s.replied / s.contacted) * 100) : (s.replied > 0 ? 100 : 0);
   const convRate  = s.total > 0 ? Math.round(((s.interested + s.meeting_booked + s.client) / s.total) * 100) : 0;
@@ -65,16 +62,22 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-7 font-sans text-[#14161A] select-none bg-transparent">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-7 font-sans text-[#14161A]">
+      <h1 className="sr-only">Dashboard</h1>
+      {error && (
+        <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-[20px] p-4 text-[13px] font-medium">
+          Could not load your pipeline: {error.message}
+        </div>
+      )}
       {/* ── TOP SECTION (2 Columns Side-by-Side) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
         {/* ── LEFT CARD (~60% width, lg:col-span-7): "Lead Outreach Tracker" ── */}
         <div className="lg:col-span-7 ui-card flex flex-col justify-between space-y-6 animate-blur-fade-up">
           {/* Header Bar */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3.5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white border border-[#D1D5DB] flex items-center justify-center text-[#14161A]">
-                <Layers className="w-5 h-5 text-[#F0501E]" />
+                <Layers className="w-5 h-5 text-[#B93A0E]" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -91,24 +94,28 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {/* Dropdown Control */}
-            <button
-              type="button"
-              onClick={() => setTimeFilter(timeFilter === 'This Month' ? 'All Time' : 'This Month')}
-              className="btn-secondary py-1.5 px-3.5 text-[12px] flex-shrink-0"
-            >
-              <span>{timeFilter}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#4B5264]" />
-            </button>
+            <div role="group" aria-label="Time range" className="flex items-center bg-[#F4F5F8] p-1 rounded-full border border-[#D1D5DB] flex-shrink-0">
+              {([['month', 'This month'], ['all', 'All time']] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setRange(value)}
+                  aria-pressed={range === value}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-bold cursor-pointer transition-colors ${range === value ? 'bg-white text-[#14161A] shadow-xs' : 'text-[#374151] hover:text-[#14161A]'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Stem Bar Visualizer Chart (Stage stems with tooltip & active circle) */}
-          <div className="pt-4 pb-2 px-2 flex items-end justify-between gap-2 h-40 border-b border-[#E2E8F0]">
+          <div className="pt-4 pb-2 px-1 flex items-end justify-between gap-1 sm:gap-2 h-40 border-b border-[#E2E8F0] overflow-x-auto" role="list" aria-label="Pipeline stages">
             {stageStems.map((item, idx) => {
               const stemPixelHeight = Math.max(Math.round((item.numVal / maxVal) * 95), 20);
 
               return (
-                <div key={idx} className="flex flex-col items-center gap-2 group relative">
+                <div key={idx} role="listitem" aria-label={`${item.label}: ${item.value}`} className="flex flex-col items-center gap-2 group relative">
                   {/* Active Tooltip Pill */}
                   {item.active && (
                     <div className="absolute -top-9 bg-[#17192B] text-white text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full shadow-md animate-fade-in whitespace-nowrap">
@@ -139,7 +146,7 @@ export function DashboardPage() {
           </div>
 
           {/* Compact Stat Summary Row */}
-          <div className="flex items-center justify-between pt-1 text-[12px] text-[#4B5264] font-medium font-mono">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[12px] text-[#374151] font-medium font-mono">
             <span>Overall DB Contacts: <strong className="text-[#14161A]">{s.total}</strong></span>
             <span>Total Replies: <strong className="text-[#14161A]">{s.replied}</strong></span>
             <span>Closed Deals: <strong className="text-[#14161A]">{s.client}</strong></span>
@@ -154,7 +161,7 @@ export function DashboardPage() {
               to="/leads"
               className="text-[12px] font-bold text-[#374151] hover:text-[#14161A] transition-colors"
             >
-              See all Prospects ({realLeads.length}) &gt;
+              See all prospects ({realLeads.length}) <span aria-hidden="true">&gt;</span>
             </Link>
           </div>
 
@@ -170,7 +177,7 @@ export function DashboardPage() {
             ) : realLeads.length === 0 ? (
               <div className="bg-[#e8eaf0] rounded-[20px] p-8 text-center border border-[#d1d5db] text-[#374151] font-medium text-[13px]">
                 No prospects in your database yet.{' '}
-                <Link to="/search" className="text-[#F0501E] font-bold hover:underline">
+                <Link to="/search" className="text-[#B93A0E] font-bold hover:underline">
                   Search for leads
                 </Link>
               </div>
@@ -196,13 +203,14 @@ export function DashboardPage() {
                             <LeadStatusBadge status={lead.status} />
                           </div>
                           <div className="text-[11px] text-[#374151] font-semibold font-mono mt-0.5">
-                            {lead.category || 'Local Business'} • WhatsApp Outreach
+                            {lead.category || 'Local business'}
                           </div>
                         </div>
                       </div>
 
                       <Link
-                        to="/leads"
+                        to={`/leads?search=${encodeURIComponent(lead.business_name)}`}
+                        aria-label={`Open ${lead.business_name} in Leads`}
                         className="w-8 h-8 rounded-full bg-white hover:bg-gray-100 flex items-center justify-center text-[#374151] transition-colors flex-shrink-0 border border-[#d1d5db]"
                       >
                         <ChevronRight className="w-4 h-4" />
@@ -214,19 +222,16 @@ export function DashboardPage() {
                       <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-white text-[#374151] border border-[#d1d5db]">
                         {lead.city || 'Local Area'}
                       </span>
-                      <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-white text-[#374151] border border-[#d1d5db]">
-                        Verified Lead
-                      </span>
                     </div>
 
                     <p className="text-[12px] text-[#374151] font-medium leading-relaxed line-clamp-2">
-                      {lead.ai_summary || "Scraped via Google Places API and queued for automated WhatsApp outreach campaign."}
+                      {lead.ai_summary || 'No AI summary yet. One is added when the lead replies.'}
                     </p>
 
                     <div className="text-[11px] text-[#374151] font-bold font-mono flex items-center gap-3 pt-1 border-t border-[#d1d5db]">
                       <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-[#6B7280]" />
-                        {lead.city || lead.address || 'India'}
+                        <MapPin className="w-3 h-3 text-[#4B5264]" />
+                        <span className="truncate max-w-[180px]">{lead.city || lead.address || '—'}</span>
                       </span>
                       <span>|</span>
                       <span>{timeAgo(lead.last_contact_at || lead.created_at)}</span>
@@ -270,7 +275,7 @@ export function DashboardPage() {
               <Link
                 to="/inbox"
                 className="w-7 h-7 rounded-full bg-white border border-[#d1d5db] hover:bg-gray-100 text-[#14161A] flex items-center justify-center font-bold text-sm flex-shrink-0 cursor-pointer"
-                title="Open Inbox"
+                aria-label="Open Inbox"
               >
                 +
               </Link>
@@ -295,7 +300,7 @@ export function DashboardPage() {
               <Link
                 to="/inbox"
                 className="w-7 h-7 rounded-full bg-white border border-[#d1d5db] hover:bg-gray-100 text-[#14161A] flex items-center justify-center font-bold text-sm flex-shrink-0 cursor-pointer"
-                title="Open Live Inbox"
+                aria-label="Open Inbox"
               >
                 +
               </Link>
@@ -329,10 +334,9 @@ export function DashboardPage() {
             {/* Header with Date Dropdown */}
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-[18px] font-bold text-[#14161A] font-sans">Outreach Progress</h4>
-              <div className="text-[12px] text-[#374151] font-bold flex items-center gap-1 cursor-pointer">
-                <Calendar className="w-3.5 h-3.5 text-[#374151]" />
-                <span>Real-Time</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#374151]" />
+              <div className="text-[12px] text-[#374151] font-bold flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-[#374151]" aria-hidden="true" />
+                <span>{range === 'month' ? 'This month' : 'All time'}</span>
               </div>
             </div>
 
@@ -348,7 +352,7 @@ export function DashboardPage() {
               {/* Group 2: Replied */}
               <div>
                 <div className="text-[11px] text-[#374151] font-bold">Replied</div>
-                <div className="text-3xl font-bold text-[#F0501E] mt-1 font-sans">{s.replied}</div>
+                <div className="text-3xl font-bold text-[#B93A0E] mt-1 font-sans">{s.replied}</div>
                 <StatTickMarks count={s.replied} colorClass="bg-[#F0501E]" />
               </div>
 

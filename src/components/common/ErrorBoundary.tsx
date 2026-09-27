@@ -27,9 +27,9 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-surface flex items-center justify-center p-6 text-text-primary">
-          <div className="bg-panel border border-border rounded-xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl animate-fade-in">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto">
+        <div className="min-h-screen bg-[#E8EAF0] flex items-center justify-center p-6 text-text-primary">
+          <div role="alert" className="bg-white border border-[#D1D5DB] rounded-xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl animate-fade-in">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-600 flex items-center justify-center mx-auto">
               <AlertCircle className="w-6 h-6" />
             </div>
             <div>
@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="pt-2">
               <button
                 onClick={() => window.location.reload()}
-                className="w-full bg-white hover:bg-white/90 text-[#08090b] font-medium rounded-full px-4 py-2.5 text-sm transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-[#17192B] hover:bg-[#23263d] text-white font-medium rounded-full px-4 py-2.5 text-sm transition-colors flex items-center justify-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
                 Reload Page

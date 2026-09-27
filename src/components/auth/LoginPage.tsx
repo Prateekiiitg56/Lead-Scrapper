@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Eye, EyeOff, Loader2, Layers } from 'lucide-react';
 import { AlmoayyedGradient } from '@/components/common/AlmoayyedGradient';
 
 export function LoginPage() {
   const { user, signIn, signUp, signInWithGoogle } = useAuth();
-  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,7 +18,7 @@ export function LoginPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={from && from !== '/login' ? from : '/dashboard'} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,14 +35,9 @@ export function LoginPage() {
         setSuccessMsg('Account created! Please check your email inbox to confirm your account.');
       }
     } else {
+      // On success the auth listener sets `user` and the <Navigate> above redirects.
       const err = await signIn(email, password);
-      if (err) {
-        setError(err.message);
-      } else {
-        // Flag this as a fresh sign-in so the welcome modal triggers
-        try { sessionStorage.setItem('just-signed-in', 'true'); } catch {}
-        navigate('/dashboard');
-      }
+      if (err) setError(err.message);
     }
     setLoading(false);
   };
@@ -49,8 +45,6 @@ export function LoginPage() {
   const handleGoogleSignIn = async () => {
     setError(null);
     setGoogleLoading(true);
-    // Flag this as a fresh sign-in (persists through OAuth redirect)
-    try { sessionStorage.setItem('just-signed-in', 'true'); } catch {}
     const err = await signInWithGoogle();
     if (err) {
       setError(err.message);
@@ -59,7 +53,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#D7D5D5] flex items-center justify-center p-6 select-none font-sans text-[#14161A] overflow-hidden">
+    <main className="dark-surface relative min-h-screen bg-[#D7D5D5] flex items-center justify-center p-4 sm:p-6 font-sans text-[#14161A] overflow-hidden">
       {/* ── Bloom Field Animated Mesh Gradient Background ── */}
       <AlmoayyedGradient opacity={0.85} />
 
@@ -84,20 +78,20 @@ export function LoginPage() {
               Lead-Scrapper
             </h1>
           </Link>
-          <p className="eyebrow text-white/40">
+          <p className="eyebrow text-white/70">
             {isSignUp ? 'Create Account' : 'Sign in to dashboard'}
           </p>
         </div>
 
         {/* Feedback Messages */}
         {error && (
-          <div className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-[14px] px-4 py-3 animate-fade-in font-medium">
+          <div role="alert" className="text-[12px] text-red-300 bg-red-500/10 border border-red-500/30 rounded-[14px] px-4 py-3 animate-fade-in font-medium">
             {error}
           </div>
         )}
 
         {successMsg && (
-          <div className="text-[12px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-[14px] px-4 py-3 animate-fade-in font-medium leading-relaxed">
+          <div role="status" className="text-[12px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-[14px] px-4 py-3 animate-fade-in font-medium leading-relaxed">
             {successMsg}
           </div>
         )}
@@ -127,7 +121,7 @@ export function LoginPage() {
         {/* Divider */}
         <div className="relative flex items-center justify-center my-2">
           <div className="border-t border-white/10 w-full" />
-          <span className="bg-[#0d1015] px-3 text-[10px] uppercase font-bold text-white/40 tracking-widest absolute">
+          <span className="bg-[#0d1015] px-3 text-[10px] uppercase font-bold text-white/70 tracking-widest absolute">
             or email
           </span>
         </div>
@@ -135,25 +129,29 @@ export function LoginPage() {
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="eyebrow text-white/60 block mb-1.5 font-bold">Email Address</label>
+            <label htmlFor="login-email" className="eyebrow text-white/75 block mb-1.5 font-bold">Email Address</label>
             <input
+              id="login-email"
+              autoComplete="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white text-[#14161A] border border-[#d1d5db] placeholder:text-[#8A90A2] rounded-full text-[13px] px-4 py-3 outline-none focus:border-[#F0501E] focus:ring-2 focus:ring-[#F0501E]/20 transition-all font-medium shadow-xs"
+              className="w-full bg-white text-[#14161A] border border-[#d1d5db] placeholder:text-[#6B7280] rounded-full text-[13px] px-4 py-3 outline-none focus:border-[#F0501E] focus:ring-2 focus:ring-[#F0501E]/20 transition-all font-medium shadow-xs"
               placeholder="you@company.com"
               required
             />
           </div>
 
           <div>
-            <label className="eyebrow text-white/60 block mb-1.5 font-bold">Password</label>
+            <label htmlFor="login-password" className="eyebrow text-white/75 block mb-1.5 font-bold">Password</label>
             <div className="relative">
               <input
+                id="login-password"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-white text-[#14161A] border border-[#d1d5db] placeholder:text-[#8A90A2] rounded-full text-[13px] pl-4 pr-11 py-3 outline-none focus:border-[#F0501E] focus:ring-2 focus:ring-[#F0501E]/20 transition-all font-medium shadow-xs"
+                className="w-full bg-white text-[#14161A] border border-[#d1d5db] placeholder:text-[#6B7280] rounded-full text-[13px] pl-4 pr-11 py-3 outline-none focus:border-[#F0501E] focus:ring-2 focus:ring-[#F0501E]/20 transition-all font-medium shadow-xs"
                 placeholder="••••••••"
                 required
                 minLength={6}
@@ -174,7 +172,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-full bg-[#F0501E] hover:bg-[#F0501E]/90 text-white text-[14px] font-semibold py-3.5 transition-all active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg shadow-[#F0501E]/30 mt-2 cursor-pointer"
+            className="w-full rounded-full bg-[#D44314] hover:bg-[#B93A0E] text-white text-[14px] font-semibold py-3.5 transition-all active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg shadow-[#F0501E]/30 mt-2 cursor-pointer"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -193,13 +191,13 @@ export function LoginPage() {
               setError(null);
               setSuccessMsg(null);
             }}
-            className="text-[12px] text-white/45 hover:text-[#F0501E] font-medium transition-colors cursor-pointer"
+            className="text-[12px] text-white/75 hover:text-white underline-offset-2 hover:underline font-medium transition-colors cursor-pointer"
           >
             {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
           </button>
 
           {/* Legal Links */}
-          <div className="flex items-center justify-center gap-3 text-[11px] text-white/40 pt-1">
+          <div className="flex items-center justify-center gap-3 text-[11px] text-white/70 pt-1">
             <Link to="/privacy" className="hover:text-white/80 transition-colors">
               Privacy Policy
             </Link>
@@ -210,6 +208,6 @@ export function LoginPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

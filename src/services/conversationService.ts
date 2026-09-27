@@ -1,83 +1,142 @@
 import { supabase } from '@/lib/supabase';
-import { isOutreachAuthorized } from '@/services/permissionService';
 import type { Conversation } from '@/types/database';
+import type { LeadStatus } from '@/lib/constants';
 
-export async function getConversations(leadId: string) {
-  const result = await supabase
+export interface InboxLead {
+  id: string;
+  business_name: string;
+  phone: string | null;
+  status: LeadStatus;
+  ai_summary: string | null;
+  last_reply_at: string | null;
+}
+
+export interface InboxConversation extends Conversation {
+  leads: InboxLead;
+}
+
+/** Most recent messages scanned to build the inbox; older threads beyond this window are not listed. */
+const INBOX_SCAN_LIMIT = 1000;
+
+export async function fetchThread(leadId: string): Promise<Conversation[]> {
+  const { data, error } = await supabase
     .from('conversations')
     .select('*')
     .eq('lead_id', leadId)
     .order('timestamp', { ascending: true });
-
-  return { data: result.data as Conversation[] | null, error: result.error };
+  if (error) throw error;
+  return (data ?? []) as Conversation[];
 }
 
-export interface InboxConversation extends Conversation {
-  leads: {
-    id: string;
-    business_name: string;
-    phone: string;
-    status: string;
-    ai_summary: string | null;
-    last_reply_at: string | null;
-    assigned_user_id?: string | null;
-  };
-}
+/** Latest message per lead, newest first, plus the user's unread inbound count. */
+export async function fetchInbox(userId: string): Promise<{ conversations: InboxConversation[]; unreadCount: number }> {
+  const [messages, unread] = await Promise.all([
+    supabase
+      .from('conversations')
+      .select('*, leads!inner(id, business_name, phone, status, ai_summary, last_reply_at)')
+      .eq('leads.assigned_user_id', userId)
+      .order('timestamp', { ascending: false })
+      .limit(INBOX_SCAN_LIMIT),
+    supabase
+      .from('conversations')
+      .select('id, leads!inner(assigned_user_id)', { count: 'exact', head: true })
+      .eq('leads.assigned_user_id', userId)
+      .eq('direction', 'INBOUND')
+      .neq('status', 'read'),
+  ]);
+  if (messages.error) throw messages.error;
+  if (unread.error) throw unread.error;
 
-export async function getRecentConversations(userEmail?: string | null, userId?: string) {
-  let query = supabase
-    .from('conversations')
-    .select('*, leads!inner(id, business_name, phone, status, ai_summary, last_reply_at, assigned_user_id)')
-    .order('timestamp', { ascending: false });
-
-  if (userId) {
-    query = query.eq('leads.assigned_user_id', userId);
-  }
-
-  const { data, error } = await query;
-  if (error) return { data: null, error };
-
-  // Deduplicate by lead_id — keep only the latest message per lead
-  const rows = (data || []) as InboxConversation[];
   const seen = new Set<string>();
-  const unique: InboxConversation[] = [];
-  for (const msg of rows) {
-    if (!seen.has(msg.lead_id)) {
-      seen.add(msg.lead_id);
-      unique.push(msg);
-    }
+  const conversations: InboxConversation[] = [];
+  for (const row of (messages.data ?? []) as InboxConversation[]) {
+    if (seen.has(row.lead_id)) continue;
+    seen.add(row.lead_id);
+    conversations.push(row);
   }
-
-  return { data: unique, error: null };
+  return { conversations, unreadCount: unread.count ?? 0 };
 }
 
-export async function addConversation(conversation: Omit<Conversation, 'id' | 'created_at'>) {
-  const result = await supabase.from('conversations').insert(conversation).select().single();
-  return { data: result.data as Conversation | null, error: result.error };
-}
-
-export async function markAsRead(leadId: string) {
-  const result = await supabase
+export async function markThreadRead(leadId: string): Promise<void> {
+  const { error } = await supabase
     .from('conversations')
     .update({ status: 'read' })
     .eq('lead_id', leadId)
     .eq('direction', 'INBOUND')
-    .not('status', 'eq', 'read');
-
-  return { error: result.error };
+    .neq('status', 'read');
+  if (error) throw error;
 }
 
-export async function getUnreadCount(userEmail?: string | null, userId?: string) {
-  let query = supabase
+/** RLS scopes this to conversations on the current user's leads. */
+export async function markAllInboundRead(): Promise<void> {
+  const { error } = await supabase
     .from('conversations')
-    .select('*, leads!inner(assigned_user_id)', { count: 'exact', head: true })
+    .update({ status: 'read' })
     .eq('direction', 'INBOUND')
-    .not('status', 'eq', 'read');
+    .neq('status', 'read');
+  if (error) throw error;
+}
 
-  if (userId) {
-    query = query.eq('leads.assigned_user_id', userId);
-  }
+export interface NotificationItem {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  read: boolean;
+  link: string;
+  type: 'message' | 'lead';
+}
 
-  const { count } = await query;
-  return count || 0;
+export async function fetchNotifications(userId: string): Promise<NotificationItem[]> {
+  const [convs, leads] = await Promise.all([
+    supabase
+      .from('conversations')
+      .select('id, message, timestamp, status, leads!inner(business_name, assigned_user_id)')
+      .eq('leads.assigned_user_id', userId)
+      .eq('direction', 'INBOUND')
+      .order('timestamp', { ascending: false })
+      .limit(4),
+    supabase
+      .from('leads')
+      .select('id, business_name, status, created_at')
+      .eq('assigned_user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(4),
+  ]);
+  if (convs.error) throw convs.error;
+  if (leads.error) throw leads.error;
+
+  type ConvRow = { id: string; message: string | null; timestamp: string; status: string; leads: { business_name: string } };
+  const items: NotificationItem[] = [
+    ...((convs.data ?? []) as unknown as ConvRow[]).map((c) => ({
+      id: `conv-${c.id}`,
+      title: `New message from ${c.leads?.business_name || 'Prospect'}`,
+      body: c.message || 'Sent an attachment',
+      time: c.timestamp,
+      read: c.status === 'read',
+      link: '/inbox',
+      type: 'message' as const,
+    })),
+    ...(leads.data ?? []).map((l) => ({
+      id: `lead-${l.id}`,
+      title: `Lead saved: ${l.business_name}`,
+      body: `Status: ${l.status || 'NEW'}`,
+      time: l.created_at,
+      read: true,
+      link: `/leads?search=${encodeURIComponent(l.business_name)}`,
+      type: 'lead' as const,
+    })),
+  ];
+  return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 6);
+}
+
+export async function fetchOutboundCount(userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('conversations')
+    .select('id, leads!inner(assigned_user_id)', { count: 'exact', head: true })
+    .eq('leads.assigned_user_id', userId)
+    .eq('direction', 'OUTBOUND')
+    .in('message_type', ['template', 'text']);
+  if (error) throw error;
+  return count ?? 0;
 }

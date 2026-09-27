@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
+import { useDialog } from '@/hooks/useDialog';
 import { createPortal } from 'react-dom';
 import { X, Check } from 'lucide-react';
 
@@ -43,28 +44,9 @@ export function WelcomeServicesModal({
   services = DEFAULT_SERVICES,
 }: WelcomeServicesModalProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Lock body scroll & listen for Escape
-  useEffect(() => {
-    if (!open) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-
-    // Auto-focus the dialog on open
-    dialogRef.current?.focus();
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open, onClose]);
+  useDialog(dialogRef, open, onClose);
 
   // Handle card selection: show checkmark briefly, then fire callback & close
   const handleCardClick = useCallback(
@@ -91,7 +73,7 @@ export function WelcomeServicesModal({
   const headingId = 'welcome-modal-heading';
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 select-none">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* ── Dimmed Backdrop ── */}
       <div
         className="fixed inset-0 bg-[#14161A]/60 backdrop-blur-sm z-[9999] animate-fade-in"
@@ -113,8 +95,8 @@ export function WelcomeServicesModal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-full text-[#8A90A2] hover:text-[#14161A] hover:bg-[#F4F5F8] transition-colors cursor-pointer z-10"
-          aria-label="Close"
+          className="absolute top-4 right-4 p-1.5 rounded-full text-[#4B5264] hover:text-[#14161A] hover:bg-[#F4F5F8] transition-colors cursor-pointer z-10"
+          aria-label="Close welcome dialog"
         >
           <X className="w-5 h-5" />
         </button>
@@ -123,7 +105,6 @@ export function WelcomeServicesModal({
         <div className="text-center mb-8 sm:mb-10">
           <h2
             id={headingId}
-            ref={headingRef}
             className="text-[28px] sm:text-[36px] font-bold text-[#14161A] tracking-tight leading-tight"
           >
             {displayName ? (
@@ -132,7 +113,7 @@ export function WelcomeServicesModal({
               <>Welcome</>
             )}
           </h2>
-          <p className="text-[15px] sm:text-[16px] text-[#6B7280] font-light mt-2">
+          <p className="text-[15px] sm:text-[16px] text-[#4B5264] mt-2">
             What can I help you with today?
           </p>
         </div>
@@ -162,7 +143,7 @@ export function WelcomeServicesModal({
                   {/* Back Image */}
                   <img
                     src={service.image}
-                    alt={`${service.title} showcase`}
+                    alt=""
                     className="absolute w-32 sm:w-36 h-auto rounded-lg shadow-md transform -rotate-6 transition-all duration-300 ease-out group-hover:rotate-[-10deg] group-hover:scale-105"
                     loading="lazy"
                     onError={(e) => {
@@ -174,7 +155,7 @@ export function WelcomeServicesModal({
                   {/* Front Image */}
                   <img
                     src={service.overlayImage}
-                    alt={`${service.title} example`}
+                    alt=""
                     className="absolute w-32 sm:w-36 h-auto rounded-lg shadow-lg transform rotate-3 transition-all duration-300 ease-out group-hover:rotate-[5deg] group-hover:scale-105"
                     loading="lazy"
                     onError={(e) => {
@@ -190,10 +171,13 @@ export function WelcomeServicesModal({
                   <h3 className="text-left text-[14px] font-semibold text-[#14161A]">
                     {service.title}
                     {service.href && (
-                      <span className="ml-1.5 text-[10px] font-medium text-[#8A90A2] align-middle">↗</span>
+                      <>
+                        <span className="ml-1.5 text-[10px] font-medium text-[#4B5264] align-middle" aria-hidden="true">↗</span>
+                        <span className="sr-only"> (opens in a new tab)</span>
+                      </>
                     )}
                   </h3>
-                  <p className="text-left text-[12px] text-[#6B7280] mt-1 leading-snug">
+                  <p className="text-left text-[12px] text-[#4B5264] mt-1 leading-snug">
                     {service.description}
                   </p>
                 </div>
@@ -207,7 +191,7 @@ export function WelcomeServicesModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-[13px] text-[#8A90A2] hover:text-[#4B5264] transition-colors cursor-pointer font-medium"
+            className="text-[13px] text-[#4B5264] hover:text-[#14161A] transition-colors cursor-pointer font-medium"
           >
             I'll decide later
           </button>

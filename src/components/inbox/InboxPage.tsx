@@ -1,495 +1,384 @@
-import { useState, useRef, useEffect } from 'react';
-import {
-  Search,
-  Send,
-  Bot,
-  Phone,
-  ArrowLeft,
-  MessageSquare,
-  Loader2,
-  Sparkles,
-} from 'lucide-react';
-import { useInbox, useConversations } from '@/hooks/useConversations';
+import { useState, useRef, useEffect, useId } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Search, Send, Bot, Phone, ArrowLeft, MessageSquare, Loader2, Sparkles, AlertCircle, Mail } from 'lucide-react';
+import { useInbox, useThread } from '@/hooks/useConversations';
+import { useLeads } from '@/hooks/useLeads';
 import { useAuth } from '@/hooks/useAuth';
 import { isOutreachAuthorized } from '@/services/permissionService';
+import { sendInboxReply } from '@/services/searchService';
 import { OutreachPermissionModal } from '@/components/common/OutreachPermissionModal';
 import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
-import { timeAgo, truncate } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
-import { sendCustomWhatsAppText } from '@/services/searchService';
-import type { LeadStatus } from '@/lib/constants';
+import { queryKeys } from '@/lib/queryClient';
+import { errorMessage, timeAgo, truncate } from '@/lib/utils';
+import type { Conversation } from '@/types/database';
+import type { InboxConversation } from '@/services/conversationService';
 
-function MessageBubble({
-  direction,
-  message,
-  timestamp,
-  status,
-  messageType,
-  aiClassification,
-}: {
-  direction: 'INBOUND' | 'OUTBOUND';
-  message: string | null;
-  timestamp: string;
-  status: string;
-  messageType: string;
-  aiClassification?: {
-    intent?: string;
-    sentiment?: string;
-    priority?: string;
-    summary?: string;
-    next_action?: string;
-  } | null;
-}) {
-  const isInbound = direction === 'INBOUND';
+const REPLIED_STATUSES = ['REPLIED', 'INTERESTED', 'MEETING_BOOKED', 'CLIENT'];
+
+const QUICK_REPLIES = [
+  { label: 'Send pricing', text: 'Here is our pricing structure: Basic ($99/mo), Pro ($299/mo). Let me know if you would like a quick demo!' },
+  { label: 'Schedule call', text: 'Would you be available for a 10-minute call tomorrow at 2 PM to discuss this further?' },
+  { label: 'Follow up', text: 'Hi! Just following up to see if you had any questions regarding our previous message.' },
+  { label: 'Ask requirements', text: 'Thank you for reaching out! What specific features are you looking for?' },
+];
+
+function isReplied(c: InboxConversation): boolean {
+  return c.direction === 'INBOUND' || !!c.leads?.last_reply_at || REPLIED_STATUSES.includes(c.leads?.status ?? '');
+}
+
+function previewText(c: Conversation): string {
+  if (c.message_type === 'template') return 'Template message';
+  if (c.message_type === 'email') return `Email: ${truncate(c.message || '', 40)}`;
+  return truncate(c.message || '', 45);
+}
+
+const STATUS_TEXT: Record<string, string> = { read: 'Read', delivered: 'Delivered', sent: 'Sent', failed: 'Failed', pending: 'Pending' };
+
+function MessageBubble({ msg }: { msg: Conversation }) {
+  const isInbound = msg.direction === 'INBOUND';
+  const ai = msg.ai_classification;
 
   return (
-    <div className={`flex ${isInbound ? 'justify-start' : 'justify-end'} mb-4 animate-fade-in`}>
-      <div className="max-w-[78%]">
+    <li className={`flex ${isInbound ? 'justify-start' : 'justify-end'}`}>
+      <div className="max-w-[85%] sm:max-w-[78%]">
         <div
-          className={`rounded-[18px] px-4 py-3 text-[13px] leading-relaxed select-text shadow-xs ${
-            isInbound
-              ? 'bg-[#f0f2f5] border border-[#cbd5e1] text-[#14161A] rounded-bl-xs'
-              : 'bg-[#F0501E] text-white font-medium rounded-br-xs shadow-sm shadow-[#F0501E]/20'
+          className={`rounded-[18px] px-4 py-3 text-[13px] leading-relaxed shadow-xs whitespace-pre-wrap break-words ${
+            isInbound ? 'bg-white border border-[#cbd5e1] text-[#14161A] rounded-bl-xs' : 'bg-[#B93A0E] text-white font-medium rounded-br-xs'
           }`}
         >
-          {messageType === 'template' ? (
-            <div className="italic text-white/70 text-[12px]">
-              Template message sent
-            </div>
+          <span className="sr-only">{isInbound ? 'They wrote: ' : 'You sent: '}</span>
+          {msg.message_type === 'email' && (
+            <span className="flex items-center gap-1 text-[11px] font-bold opacity-90 mb-1">
+              <Mail className="w-3 h-3" aria-hidden="true" /> Email
+            </span>
+          )}
+          {msg.message_type === 'template' ? (
+            <span className="italic">{msg.template_name ? `Template sent: ${msg.template_name}` : 'Template message sent'}</span>
           ) : (
-            message || <span className="text-[#6B7280] italic">No content</span>
+            msg.message || <span className="italic opacity-80">No text content</span>
           )}
         </div>
 
         <div className={`flex items-center gap-2 mt-1.5 ${isInbound ? '' : 'justify-end'}`}>
-          <span className="text-[10px] text-[#6B7280] font-mono">{timeAgo(timestamp)}</span>
+          <time dateTime={msg.timestamp} className="text-[11px] text-[#4B5264] font-mono">{timeAgo(msg.timestamp)}</time>
           {!isInbound && (
-            <span className={`text-[10px] font-mono ${
-              status === 'read'      ? 'text-emerald-600 font-semibold' :
-              status === 'delivered' ? 'text-[#6B7280]' :
-              status === 'failed'    ? 'text-red-600 font-semibold' :
-              'text-[#6B7280]'
-            }`}>
-              {status === 'read' || status === 'delivered' ? 'Read' :
-               status === 'sent'   ? 'Sent' :
-               status === 'failed' ? 'Failed' : 'Pending'}
+            <span className={`text-[11px] font-mono ${msg.status === 'failed' ? 'text-red-700 font-semibold' : msg.status === 'read' ? 'text-emerald-700 font-semibold' : 'text-[#4B5264]'}`}>
+              {STATUS_TEXT[msg.status] ?? msg.status}
             </span>
           )}
         </div>
 
-        {/* AI classification card */}
-        {isInbound && aiClassification && (
-          <div className="mt-2.5 bg-[#f0f2f5] border border-[#cbd5e1] text-[#14161A] rounded-xl p-3.5 shadow-xs animate-fade-in">
+        {isInbound && ai && (ai.summary || ai.intent) && (
+          <div className="mt-2.5 bg-white/80 border border-[#cbd5e1] text-[#14161A] rounded-xl p-3.5 shadow-xs">
             <div className="flex items-start gap-2.5">
-              <Bot className="w-4 h-4 text-[#F0501E] mt-0.5 flex-shrink-0" />
+              <Bot className="w-4 h-4 text-[#B93A0E] mt-0.5 flex-shrink-0" aria-hidden="true" />
               <div className="space-y-1">
-                <div className="eyebrow text-[#6B7280]">AI Analysis</div>
-                <div className="text-[12px] text-[#14161A] font-medium leading-normal">{aiClassification.summary}</div>
+                <div className="eyebrow text-[#4B5264]">AI analysis</div>
+                {ai.summary && <div className="text-[12px] font-medium leading-normal">{ai.summary}</div>}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {aiClassification.intent && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#d8dadf] border border-[#cbd5e1] text-[#14161A] font-mono font-medium">
-                      {aiClassification.intent}
-                    </span>
-                  )}
-                  {aiClassification.sentiment && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#d8dadf] border border-[#cbd5e1] text-[#6B7280] font-mono">
-                      {aiClassification.sentiment}
-                    </span>
-                  )}
-                  {aiClassification.priority && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#d8dadf] border border-[#cbd5e1] text-[#6B7280] font-mono">
-                      {aiClassification.priority}
-                    </span>
-                  )}
+                  {[ai.intent, ai.sentiment, ai.priority].filter(Boolean).map((tag) => (
+                    <span key={tag} className="px-2.5 py-0.5 rounded-full text-[11px] bg-[#EEF0F4] border border-[#cbd5e1] text-[#374151] font-mono">{tag}</span>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </li>
   );
 }
 
 export function InboxPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const composerId = useId();
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
-  const [sending, setSending] = useState(false);
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'unreplied' | 'replied'>('all');
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [sendWarning, setSendWarning] = useState<string | null>(null);
 
-  const { conversations, loading: inboxLoading, refetch: refetchInbox } = useInbox();
-  const { messages, loading: messagesLoading, refetch: refetchMessages } = useConversations(selectedLeadId);
+  const { conversations, loading: inboxLoading, error: inboxError, refetch: refetchInbox } = useInbox();
+  const { messages, loading: messagesLoading, error: threadError } = useThread(selectedLeadId);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
+  // Keep the thread scrolled to the newest message without moving the page itself.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, selectedLeadId]);
 
+  // Desktop: open the most recent conversation by default.
   useEffect(() => {
-    if (!selectedLeadId && conversations.length > 0) {
-      setSelectedLeadId(conversations[0].lead_id);
-    }
+    if (!selectedLeadId && conversations.length > 0) setSelectedLeadId(conversations[0].lead_id);
   }, [conversations, selectedLeadId]);
 
-  const selectedConversation = conversations.find(c => c.lead_id === selectedLeadId);
+  const { leads } = useLeads();
+  const selected = conversations.find((c) => c.lead_id === selectedLeadId);
+  const selectedLead = selected?.leads;
+  // Email lives on the full lead row (and only exists once migration 002 is applied).
+  const selectedEmail = leads.find((l) => l.id === selectedLeadId)?.email ?? null;
 
-  const checkIsReplied = (c: any) => {
-    const lead = c?.leads;
-    const leadStatus = (lead?.status || '').toUpperCase();
-    const hasInbound = c.direction === 'INBOUND';
-    const hasLastReply = !!lead?.last_reply_at;
-    const isRepliedStatus = ['REPLIED', 'INTERESTED', 'MEETING_BOOKED', 'CLIENT'].includes(leadStatus);
-    return hasInbound || hasLastReply || isRepliedStatus;
-  };
-
-  const repliedCount = conversations.filter(checkIsReplied).length;
-  const unrepliedCount = conversations.length - repliedCount;
-
-  const filteredConversations = conversations.filter(c => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lead  = (c as any).leads;
-    const name  = lead?.business_name || '';
-    const phone = lead?.phone || '';
-    const matchesSearch = !search || name.toLowerCase().includes(search.toLowerCase()) || phone.includes(search);
-    if (!matchesSearch) return false;
-
-    const isReplied = checkIsReplied(c);
-    if (filterTab === 'replied') return isReplied;
-    if (filterTab === 'unreplied') return !isReplied;
+  const repliedCount = conversations.filter(isReplied).length;
+  const q = search.trim().toLowerCase();
+  const filtered = conversations.filter((c) => {
+    const name = c.leads?.business_name?.toLowerCase() ?? '';
+    const phone = c.leads?.phone ?? '';
+    if (q && !name.includes(q) && !phone.includes(q)) return false;
+    if (filterTab === 'replied') return isReplied(c);
+    if (filterTab === 'unreplied') return !isReplied(c);
     return true;
   });
 
-  const handleSelectConversation = (leadId: string) => {
+  const send = useMutation({
+    mutationFn: ({ leadId, text }: { leadId: string; text: string }) => sendInboxReply(leadId, text),
+    onSuccess: (result, { leadId }) => {
+      setInputText('');
+      setSendWarning(result.warning);
+      queryClient.invalidateQueries({ queryKey: queryKeys.thread(leadId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inbox(user?.id) });
+    },
+  });
+
+  const canReply = !!selectedLead?.phone;
+
+  const handleSend = () => {
+    const text = inputText.trim();
+    if (!text || !selectedLeadId || send.isPending || !canReply) return;
+    if (!isOutreachAuthorized(user?.email)) return setShowPermissionModal(true);
+    send.mutate({ leadId: selectedLeadId, text });
+  };
+
+  const selectConversation = (leadId: string) => {
+    send.reset();
+    setSendWarning(null);
     setSelectedLeadId(leadId);
     setMobileShowChat(true);
   };
 
-  const handleSendText = async () => {
-    if (!inputText.trim() || !selectedLeadId || sending) return;
-
-    if (!isOutreachAuthorized(user?.email)) {
-      setShowPermissionModal(true);
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lead = (selectedConversation as any)?.leads;
-    const textToSend = inputText.trim();
-    setInputText('');
-    setSending(true);
-    try {
-      if (lead?.phone) {
-        const sentOk = await sendCustomWhatsAppText(lead.phone, textToSend, user?.email);
-        if (!sentOk) {
-          setShowPermissionModal(true);
-          return;
-        }
-      }
-      await supabase.from('conversations').insert({
-        lead_id: selectedLeadId,
-        direction: 'OUTBOUND',
-        message: textToSend,
-        message_type: 'text',
-        status: 'sent',
-        timestamp: new Date().toISOString(),
-      });
-      refetchMessages();
-      refetchInbox();
-    } catch (err) {
-      console.error('Failed to send:', err);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleAiSuggestion = (suggestion: string) => setInputText(suggestion);
+  const tabs = [
+    ['all', `All (${conversations.length})`],
+    ['replied', `Replied (${repliedCount})`],
+    ['unreplied', `Unreplied (${conversations.length - repliedCount})`],
+  ] as const;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto select-none font-sans text-[#14161A] bg-transparent">
-      {/* ── Inbox Outer Glass Shell ── */}
-      <div className="relative z-10 flex h-[calc(100vh-140px)] w-full bg-[#e8eaf0]/95 backdrop-blur-md border border-[#cbd5e1] rounded-[24px] overflow-hidden shadow-xl">
-        {/* ── Conversation List Sidebar ── */}
-        <div className={`w-full lg:w-80 border-r border-[#cbd5e1] flex flex-col bg-[#e8eaf0] ${mobileShowChat ? 'hidden lg:flex' : 'flex'}`}>
-          {/* Header */}
-          <div className="px-5 py-5 border-b border-[#E2E8F0] bg-[#E8EAF0]">
-            <h1 className="text-display text-[28px] text-[#14161A] mb-4 animate-blur-fade-up">
-              Inbox
-            </h1>
-            <div className="relative animate-blur-fade-up" style={{ animationDelay: '100ms' }}>
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A90A2] pointer-events-none" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="quiet-input !pl-11 text-[13px]"
-                placeholder="Search conversations..."
-              />
+    <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto font-sans text-[#14161A]">
+      <div className="relative flex h-[calc(100dvh-170px)] md:h-[calc(100dvh-150px)] min-h-[480px] w-full bg-[#e8eaf0]/95 border border-[#cbd5e1] rounded-[24px] overflow-hidden shadow-xl">
+        {/* Conversation list */}
+        <section aria-label="Conversations" className={`w-full lg:w-80 border-r border-[#cbd5e1] flex-col bg-[#e8eaf0] ${mobileShowChat ? 'hidden lg:flex' : 'flex'}`}>
+          <div className="px-4 sm:px-5 py-5 border-b border-[#E2E8F0]">
+            <h1 className="text-display text-[28px] text-[#14161A] mb-4">Inbox</h1>
+            <div className="relative">
+              <label htmlFor="inbox-search" className="sr-only">Search conversations</label>
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5264] pointer-events-none" aria-hidden="true" />
+              <input id="inbox-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} className="quiet-input !pl-11 text-[13px]" placeholder="Search conversations..." />
             </div>
-
-            {/* Filter Tabs: All / Replied / Unreplied */}
-            <div className="flex items-center gap-1 mt-3 bg-[#d8dadf]/70 p-1 rounded-xl animate-blur-fade-up" style={{ animationDelay: '150ms' }}>
-              <button
-                type="button"
-                onClick={() => setFilterTab('all')}
-                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
-                  filterTab === 'all'
-                    ? 'bg-white text-[#14161A] shadow-xs'
-                    : 'text-[#64748b] hover:text-[#0f172a]'
-                }`}
-              >
-                All ({conversations.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterTab('replied')}
-                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
-                  filterTab === 'replied'
-                    ? 'bg-white text-[#F0501E] shadow-xs'
-                    : 'text-[#64748b] hover:text-[#0f172a]'
-                }`}
-              >
-                Replied ({repliedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterTab('unreplied')}
-                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
-                  filterTab === 'unreplied'
-                    ? 'bg-white text-[#14161A] shadow-xs'
-                    : 'text-[#64748b] hover:text-[#0f172a]'
-                }`}
-              >
-                Unreplied ({unrepliedCount})
-              </button>
-            </div>
-          </div>
-
-          {/* Conversation rows */}
-          <div className="flex-1 overflow-y-auto">
-            {inboxLoading
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="px-5 py-4 border-b border-[#cbd5e1]">
-                    <div className="flex items-center gap-3">
-                      <div className="skeleton w-10 h-10 rounded-xl flex-shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <div className="skeleton h-4 w-28" />
-                        <div className="skeleton h-3 w-40" />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              : filteredConversations.length === 0
-              ? (
-                <div className="text-center py-16 text-[#6B7280] text-[13px] px-4">
-                  <MessageSquare className="w-8 h-8 mx-auto mb-3 text-[#6B7280] animate-float" />
-                  {filterTab === 'replied'
-                    ? 'No replied conversations'
-                    : filterTab === 'unreplied'
-                    ? 'No unreplied conversations'
-                    : search
-                    ? 'No matching conversations found'
-                    : 'No conversations yet'}
-                </div>
-              )
-              : filteredConversations.map((conv) => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const lead = (conv as any).leads;
-                  const isSelected  = conv.lead_id === selectedLeadId;
-                  const isInbound   = conv.direction === 'INBOUND';
-                  const isUnread    = isInbound && conv.status !== 'read';
-                  const initial     = (lead?.business_name?.charAt(0) || '?').toUpperCase();
-
-                  return (
-                    <button
-                      key={conv.lead_id}
-                      onClick={() => handleSelectConversation(conv.lead_id)}
-                      className={`relative w-full text-left px-5 py-4 border-b border-[#cbd5e1] transition-all duration-150 group cursor-pointer ${
-                        isSelected
-                          ? 'bg-white text-[#14161A] font-bold border-l-4 border-l-[#F0501E] shadow-xs'
-                          : 'hover:bg-white/50 text-[#6B7280]'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        {/* Avatar */}
-                        <div className={`w-10 h-10 rounded-xl bg-[#e5e7eb] border border-[#cbd5e1] flex items-center justify-center text-[13px] font-mono text-[#14161A] font-bold flex-shrink-0 transition-colors ${isSelected ? 'border-[#F0501E] text-[#F0501E]' : ''}`}>
-                          {initial}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline justify-between mb-1">
-                            <span className={`text-[13px] truncate transition-colors ${isSelected ? 'text-[#14161A] font-bold' : 'text-[#14161A] font-medium group-hover:text-[#F0501E]'}`}>
-                              {lead?.business_name || 'Unknown'}
-                            </span>
-                            <span className="text-[10px] text-[#6B7280] ml-2 flex-shrink-0 font-mono">{timeAgo(conv.timestamp)}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {isUnread && <span className="w-2 h-2 rounded-full bg-[#F0501E] flex-shrink-0" />}
-                            <span className="text-[12px] text-[#6B7280] truncate">
-                              {!isInbound && <span className="text-[#6B7280]">You: </span>}
-                              {conv.message_type === 'template'
-                                ? 'Template message'
-                                : truncate(conv.message || '', 45)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-            }
-          </div>
-        </div>
-
-        {/* ── Chat Thread Main Section (Theme-Blended Surface) ── */}
-        <div className={`flex-1 flex flex-col bg-[#e2e4e8]/80 backdrop-blur-md ${!mobileShowChat && !selectedLeadId ? 'hidden lg:flex' : 'flex'}`}>
-          {selectedLeadId ? (
-            <div key={selectedLeadId} className="flex-1 flex flex-col min-h-0 animate-fade-in">
-              {/* Chat header */}
-              <div className="flex items-center gap-3 px-6 h-16 border-b border-[#cbd5e1] bg-[#e8eaf0]">
+            <div role="group" aria-label="Filter conversations" className="flex items-center gap-1 mt-3 bg-[#d8dadf]/70 p-1 rounded-xl">
+              {tabs.map(([value, label]) => (
                 <button
-                  onClick={() => { setMobileShowChat(false); setSelectedLeadId(null); }}
-                  className="lg:hidden text-[#6B7280] hover:text-[#14161A] transition-colors"
+                  key={value}
+                  type="button"
+                  onClick={() => setFilterTab(value)}
+                  aria-pressed={filterTab === value}
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${filterTab === value ? 'bg-white text-[#14161A] shadow-xs' : 'text-[#374151] hover:text-[#0f172a]'}`}
                 >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {inboxLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="px-5 py-4 border-b border-[#cbd5e1] flex items-center gap-3" aria-hidden="true">
+                  <div className="skeleton w-10 h-10 !rounded-xl flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="skeleton h-4 w-28" />
+                    <div className="skeleton h-3 w-40" />
+                  </div>
+                </div>
+              ))
+            ) : inboxError ? (
+              <div role="alert" className="text-center py-12 px-4 space-y-3">
+                <AlertCircle className="w-8 h-8 mx-auto text-red-600" aria-hidden="true" />
+                <p className="text-[13px] text-[#14161A] font-bold">Could not load conversations</p>
+                <button type="button" onClick={() => refetchInbox()} className="btn-secondary !py-1.5">Try again</button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-16 text-[#4B5264] text-[13px] px-4">
+                <MessageSquare className="w-8 h-8 mx-auto mb-3 animate-float" aria-hidden="true" />
+                {search ? 'No matching conversations' : filterTab === 'replied' ? 'No replied conversations' : filterTab === 'unreplied' ? 'No unreplied conversations' : 'No conversations yet. Contact a lead from Search to start one.'}
+              </div>
+            ) : (
+              <ul>
+                {filtered.map((conv) => {
+                  const lead = conv.leads;
+                  const isSelected = conv.lead_id === selectedLeadId;
+                  const isUnread = conv.direction === 'INBOUND' && conv.status !== 'read';
+                  return (
+                    <li key={conv.lead_id}>
+                      <button
+                        type="button"
+                        onClick={() => selectConversation(conv.lead_id)}
+                        aria-current={isSelected ? 'true' : undefined}
+                        className={`relative w-full text-left px-4 sm:px-5 py-4 border-b border-[#cbd5e1] transition-colors cursor-pointer border-l-4 ${
+                          isSelected ? 'bg-white border-l-[#D44314]' : 'border-l-transparent hover:bg-white/50'
+                        }`}
+                      >
+                        <span className="flex items-start gap-3">
+                          <span className={`w-10 h-10 rounded-xl bg-[#e5e7eb] border flex items-center justify-center text-[13px] font-mono font-bold flex-shrink-0 ${isSelected ? 'border-[#D44314] text-[#B93A0E]' : 'border-[#cbd5e1] text-[#14161A]'}`} aria-hidden="true">
+                            {(lead?.business_name?.charAt(0) || '?').toUpperCase()}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="flex items-baseline justify-between mb-1 gap-2">
+                              <span className={`text-[13px] truncate text-[#14161A] ${isSelected || isUnread ? 'font-bold' : 'font-medium'}`}>{lead?.business_name || 'Unknown'}</span>
+                              <span className="text-[11px] text-[#4B5264] flex-shrink-0 font-mono">{timeAgo(conv.timestamp)}</span>
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              {isUnread && (
+                                <>
+                                  <span className="w-2 h-2 rounded-full bg-[#D44314] flex-shrink-0" aria-hidden="true" />
+                                  <span className="sr-only">Unread. </span>
+                                </>
+                              )}
+                              <span className="text-[12px] text-[#4B5264] truncate">
+                                {conv.direction === 'OUTBOUND' && 'You: '}
+                                {previewText(conv)}
+                              </span>
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        {/* Thread */}
+        <section aria-label="Conversation" className={`flex-1 flex-col bg-[#e2e4e8]/80 min-w-0 ${mobileShowChat ? 'flex' : 'hidden lg:flex'}`}>
+          {selectedLeadId && selectedLead ? (
+            <div key={selectedLeadId} className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center gap-3 px-4 sm:px-6 h-16 border-b border-[#cbd5e1] bg-[#e8eaf0] flex-shrink-0">
+                <button type="button" onClick={() => setMobileShowChat(false)} className="lg:hidden btn-icon-sm" aria-label="Back to conversations">
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <div className="w-9 h-9 rounded-xl bg-[#F0501E] text-white flex items-center justify-center text-[12px] font-mono font-bold shadow-xs">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {((selectedConversation as any)?.leads?.business_name?.charAt(0) || '?').toUpperCase()}
-                </div>
+                <span className="w-9 h-9 rounded-xl bg-[#D44314] text-white flex items-center justify-center text-[12px] font-mono font-bold shadow-xs flex-shrink-0" aria-hidden="true">
+                  {(selectedLead.business_name?.charAt(0) || '?').toUpperCase()}
+                </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[14px] text-[#14161A] font-bold truncate">
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {(selectedConversation as any)?.leads?.business_name || 'Unknown'}
-                  </div>
-                  <div className="text-[11px] text-[#6B7280] font-mono">
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {(selectedConversation as any)?.leads?.phone || ''}
-                  </div>
+                  <h2 className="text-[14px] text-[#14161A] font-bold truncate">{selectedLead.business_name}</h2>
+                  <div className="text-[11px] text-[#4B5264] font-mono truncate">{selectedLead.phone || selectedEmail || ''}</div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {(selectedConversation as any)?.leads?.status && (
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    <LeadStatusBadge status={(selectedConversation as any).leads.status as LeadStatus} />
-                  )}
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {(selectedConversation as any)?.leads?.phone && (
-                    <a
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      href={`tel:${(selectedConversation as any).leads.phone}`}
-                      className="p-2 text-[#6B7280] hover:text-[#F0501E] transition-colors rounded-full hover:bg-white/60 cursor-pointer"
-                      title="Call Business"
-                    >
-                      <Phone className="w-4 h-4" />
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="hidden sm:inline-flex"><LeadStatusBadge status={selectedLead.status} /></span>
+                  {selectedLead.phone && (
+                    <a href={`tel:${selectedLead.phone}`} className="btn-icon-sm hover:!text-[#B93A0E]" aria-label={`Call ${selectedLead.business_name}`}>
+                      <Phone className="w-4 h-4" aria-hidden="true" />
                     </a>
                   )}
                 </div>
               </div>
 
-              {/* Messages area capped to max-w-4xl */}
-              <div className="flex-1 overflow-y-auto px-6 py-6 bg-transparent w-full">
-                <div className="max-w-4xl mx-auto space-y-4">
+              <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-6" aria-busy={messagesLoading}>
+                <div className="max-w-4xl mx-auto">
                   {messagesLoading ? (
-                    <div className="flex items-center justify-center h-48">
-                      <span className="text-[13px] text-[#6B7280]">Loading messages...</span>
-                    </div>
+                    <p className="text-center text-[13px] text-[#4B5264] py-16">Loading messages…</p>
+                  ) : threadError ? (
+                    <p role="alert" className="text-center text-[13px] text-red-700 py-16 font-medium">Could not load this conversation.</p>
                   ) : messages.length === 0 ? (
-                    <div className="flex items-center justify-center h-48">
-                      <div className="text-center">
-                        <MessageSquare className="w-9 h-9 mx-auto mb-3 text-[#6B7280] animate-float" />
-                        <p className="text-[13px] text-[#6B7280]">No messages yet</p>
-                      </div>
-                    </div>
+                    <p className="text-center text-[13px] text-[#4B5264] py-16">No messages yet</p>
                   ) : (
-                    messages.map((msg) => (
-                      <MessageBubble
-                        key={msg.id}
-                        direction={msg.direction}
-                        message={msg.message}
-                        timestamp={msg.timestamp}
-                        status={msg.status}
-                        messageType={msg.message_type}
-                        aiClassification={msg.ai_classification}
-                      />
-                    ))
+                    <ol className="space-y-4">{messages.map((m) => <MessageBubble key={m.id} msg={m} />)}</ol>
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
               </div>
 
-              {/* Quick actions + input footer */}
-              <div className="px-6 py-4 border-t border-[#cbd5e1] bg-[#e8eaf0]">
+              <div className="px-3 sm:px-6 py-4 border-t border-[#cbd5e1] bg-[#e8eaf0] flex-shrink-0">
                 <div className="max-w-4xl mx-auto space-y-3">
-                  {/* AI quick chips */}
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                    <Sparkles className="w-3.5 h-3.5 text-[#F0501E] flex-shrink-0 animate-pulse" />
-                    {[
-                      { label: 'Send Pricing',    text: 'Here is our pricing structure: Basic ($99/mo), Pro ($299/mo). Let me know if you would like a quick demo!' },
-                      { label: 'Schedule Call',   text: 'Would you be available for a 10-minute call tomorrow at 2 PM to discuss this further?' },
-                      { label: 'Follow Up',       text: 'Hi! Just following up to see if you had any questions regarding our previous message.' },
-                      { label: 'Ask Requirements', text: 'Thank you for reaching out! What specific features are you looking for?' },
-                    ].map((chip) => (
-                      <button
-                        key={chip.label}
-                        type="button"
-                        onClick={() => handleAiSuggestion(chip.text)}
-                        className="bg-[#e5e7eb] hover:bg-[#d8dadf] border border-[#cbd5e1] px-3.5 py-1.5 rounded-full text-[11px] font-medium text-[#14161A] transition-colors whitespace-nowrap flex-shrink-0 shadow-xs cursor-pointer"
+                  {!canReply ? (
+                    <p className="text-[12px] text-[#374151] font-medium bg-white/70 rounded-xl px-3 py-2 border border-[#cbd5e1]">
+                      This lead has no phone number, so WhatsApp replies are unavailable.
+                      {selectedEmail && <> Reply by email to <a className="underline font-bold" href={`mailto:${selectedEmail}`}>{selectedEmail}</a>.</>}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" role="group" aria-label="Quick replies">
+                        <Sparkles className="w-3.5 h-3.5 text-[#B93A0E] flex-shrink-0" aria-hidden="true" />
+                        {QUICK_REPLIES.map((chip) => (
+                          <button
+                            key={chip.label}
+                            type="button"
+                            onClick={() => setInputText(chip.text)}
+                            className="bg-white/70 hover:bg-white border border-[#cbd5e1] px-3.5 py-1.5 rounded-full text-[12px] font-medium text-[#14161A] whitespace-nowrap flex-shrink-0 cursor-pointer"
+                          >
+                            {chip.label}
+                          </button>
+                        ))}
+                      </div>
+                      {sendWarning && (
+                        <p role="status" className="text-[12px] text-amber-900 font-medium flex items-start gap-1.5">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                          {sendWarning}
+                        </p>
+                      )}
+                      {send.isError && (
+                        <p role="alert" className="text-[12px] text-[#B91C1C] font-medium flex items-start gap-1.5">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                          Not sent: {errorMessage(send.error, 'WhatsApp reply failed.')} Your message is still in the box.
+                        </p>
+                      )}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleSend();
+                        }}
+                        className="flex items-center gap-2"
                       >
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Text input */}
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); handleSendText(); }}
-                    className="flex items-center gap-2 relative"
-                  >
-                    <input
-                      value={inputText}
-                      onChange={(e) => setInputText(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); } }}
-                      className="quiet-input !pl-5 flex-1 bg-[#f8f9fc] border-[#cbd5e1] text-[#14161A] placeholder:text-[#6B7280]"
-                      placeholder="Type a message..."
-                    />
-                    <button
-                      type="submit"
-                      disabled={!inputText.trim() || sending}
-                      className="bg-[#F0501E] hover:bg-[#F0501E]/90 text-white p-3 rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 shadow-md shadow-[#F0501E]/20 cursor-pointer"
-                    >
-                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    </button>
-                  </form>
+                        <label htmlFor={composerId} className="sr-only">Reply on WhatsApp</label>
+                        <input
+                          id={composerId}
+                          value={inputText}
+                          onChange={(e) => setInputText(e.target.value)}
+                          maxLength={4096}
+                          className="quiet-input !pl-5 flex-1"
+                          placeholder="Type a WhatsApp reply..."
+                          disabled={send.isPending}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!inputText.trim() || send.isPending}
+                          className="bg-[#D44314] hover:bg-[#B93A0E] text-white w-11 h-11 rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center shadow-md cursor-pointer"
+                          aria-label="Send reply"
+                        >
+                          {send.isPending ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
+                        </button>
+                      </form>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           ) : (
-            /* Empty state (No Conversation Selected) */
-            <div className="flex-1 flex items-center justify-center p-6 bg-[#e2e4e8]/60">
-              <div className="max-w-md mx-auto p-8 rounded-[24px] bg-white border border-[#d1d5db] shadow-xs text-center space-y-3 animate-blur-fade-up">
-                <div className="w-14 h-14 rounded-2xl bg-[#f0f2f5] border border-[#d1d5db] flex items-center justify-center mx-auto mb-2 text-[#F0501E] shadow-xs">
-                  <MessageSquare className="w-7 h-7" />
-                </div>
-                <h3 className="text-lg font-bold text-[#14161A] font-sans">Select a Lead Conversation</h3>
-                <p className="text-[13px] text-[#64748b] leading-relaxed font-sans">
-                  Choose any prospect from the left sidebar to view live WhatsApp messages, AI intent classifications, and reply instantly.
-                </p>
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="max-w-md mx-auto p-8 rounded-[24px] bg-white border border-[#d1d5db] shadow-xs text-center space-y-3">
+                <MessageSquare className="w-8 h-8 mx-auto text-[#B93A0E]" aria-hidden="true" />
+                <h2 className="text-lg font-bold text-[#14161A]">Select a conversation</h2>
+                <p className="text-[13px] text-[#4B5264] leading-relaxed">Choose a lead on the left to view messages and AI classifications, and reply on WhatsApp.</p>
               </div>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* Outreach Permission Restriction Modal */}
-      {showPermissionModal && (
-        <OutreachPermissionModal
-          userEmail={user?.email}
-          onClose={() => setShowPermissionModal(false)}
-        />
-      )}
+      <OutreachPermissionModal open={showPermissionModal} onClose={() => setShowPermissionModal(false)} />
     </div>
   );
 }

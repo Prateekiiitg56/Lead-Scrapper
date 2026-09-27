@@ -1,38 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 
+/** Animate from the currently shown value to `target`. Jumps straight there under reduced motion. */
 export function useCountUp(target: number, duration: number = 600): number {
   const [count, setCount] = useState(0);
-  const startRef = useRef<number | null>(null);
-  const fromRef = useRef<number>(0);
+  const shownRef = useRef(0);
 
   useEffect(() => {
-    // Respect reduced motion
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      shownRef.current = target;
       setCount(target);
       return;
     }
 
-    let animationFrameId: number;
-    const startValue = count;
-    fromRef.current = startValue;
-    startRef.current = null;
+    const from = shownRef.current;
+    let start: number | null = null;
+    let frame = 0;
 
     const step = (timestamp: number) => {
-      if (!startRef.current) startRef.current = timestamp;
-      const progress = Math.min((timestamp - startRef.current) / duration, 1);
-      // Cubic-bezier / expo out feel
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      const currentVal = Math.round(startValue + (target - startValue) * easeOut);
-      setCount(currentVal);
-
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(step);
-      }
+      start ??= timestamp;
+      const progress = Math.min((timestamp - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(from + (target - from) * eased);
+      shownRef.current = value;
+      setCount(value);
+      if (progress < 1) frame = requestAnimationFrame(step);
     };
 
-    animationFrameId = requestAnimationFrame(step);
-
-    return () => cancelAnimationFrame(animationFrameId);
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
   }, [target, duration]);
 
   return count;

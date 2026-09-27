@@ -12,17 +12,6 @@ export const LEAD_STATUSES = [
 
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
-export const STATUS_COLORS: Record<LeadStatus, { bg: string; text: string; dot: string }> = {
-  NEW:            { bg: 'bg-slate-500/10',   text: 'text-slate-400',  dot: 'bg-slate-400' },
-  CONTACTED:      { bg: 'bg-blue-500/10',    text: 'text-blue-400',   dot: 'bg-blue-400' },
-  REPLIED:        { bg: 'bg-amber-500/10',   text: 'text-amber-400',  dot: 'bg-amber-400' },
-  INTERESTED:     { bg: 'bg-emerald-500/10', text: 'text-emerald-400',dot: 'bg-emerald-400' },
-  FOLLOW_UP:      { bg: 'bg-orange-500/10',  text: 'text-orange-400', dot: 'bg-orange-400' },
-  MEETING_BOOKED: { bg: 'bg-purple-500/10',  text: 'text-purple-400', dot: 'bg-purple-400' },
-  CLIENT:         { bg: 'bg-green-500/10',   text: 'text-green-400',  dot: 'bg-green-400' },
-  LOST:           { bg: 'bg-red-500/10',     text: 'text-red-400',    dot: 'bg-red-400' },
-};
-
 export const STATUS_LABELS: Record<LeadStatus, string> = {
   NEW: 'New',
   CONTACTED: 'Contacted',
@@ -33,11 +22,6 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   CLIENT: 'Client',
   LOST: 'Lost',
 };
-
-// ─── Message directions ───
-export type MessageDirection = 'INBOUND' | 'OUTBOUND';
-export type MessageType = 'text' | 'template' | 'image' | 'video' | 'audio' | 'document' | 'location' | 'reaction';
-export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 // ─── Business type presets ───
 export const BUSINESS_TYPES = [
@@ -60,10 +44,6 @@ export const BUSINESS_TYPES = [
   'Digital Marketing Consultant',
   'Other',
 ] as const;
-
-// ─── Outreach channels ───
-export const OUTREACH_CHANNELS = ['whatsapp', 'email', 'linkedin'] as const;
-export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
 export const EMAIL_TEMPLATES = [
   { id: 'ai_personalized_email', label: 'AI Personalized (Gemini)' },

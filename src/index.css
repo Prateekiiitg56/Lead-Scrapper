@@ -206,7 +206,8 @@
 
 /* ── Button Primitives ── */
 .btn-primary {
-  background-color: #F0501E;
+  /* Darker coral than --color-accent so white 13px labels meet WCAG AA (4.5:1). */
+  background-color: #D44314;
   color: #FFFFFF;
   font-weight: 700;
   border-radius: 9999px;
@@ -222,7 +223,7 @@
   gap: 0.5rem;
 }
 .btn-primary:hover {
-  background-color: #D8451A;
+  background-color: #B93A0E;
 }
 .btn-primary:active {
   transform: scale(0.95);
@@ -294,6 +295,57 @@
   color: #14161A;
 }
 
+.btn-icon-sm {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4B5264;
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+  cursor: pointer;
+}
+.btn-icon-sm:hover {
+  background-color: #F1F5F9;
+  color: #14161A;
+}
+
+.btn-danger {
+  background-color: #DC2626;
+  color: #FFFFFF;
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.5rem 1.25rem;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+.btn-danger:hover { background-color: #B91C1C; }
+.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-dark {
+  background-color: #17192B;
+  color: #FFFFFF;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+.btn-dark:hover { background-color: #23263d; }
+
+.btn-ghost:disabled, .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Input Primitive ── */
 .ui-input {
   background-color: #FFFFFF;
@@ -338,7 +390,7 @@
 /* ── Badge Primitives ── */
 .badge-target {
   background-color: rgba(240, 80, 30, 0.10);
-  color: #F0501E;
+  color: #A8350D;
   border: 1px solid rgba(240, 80, 30, 0.20);
   border-radius: 9999px;
   padding: 0.25rem 0.75rem;
@@ -366,7 +418,7 @@
 
 .badge-rating {
   background-color: #FFFBEB;
-  color: #92702A;
+  color: #7A5B1E;
   border: 1px solid rgba(253, 231, 179, 0.8);
   border-radius: 9999px;
   padding: 0.25rem 0.75rem;
@@ -380,7 +432,7 @@
 
 .badge-success {
   background-color: #EAFBF1;
-  color: #0F9D58;
+  color: #0B6B3C;
   border: 1px solid rgba(15, 157, 88, 0.20);
   border-radius: 9999px;
   padding: 0.25rem 0.75rem;
@@ -394,7 +446,7 @@
 
 .badge-danger {
   background-color: #FEF2F2;
-  color: #DC2626;
+  color: #B91C1C;
   border: 1px solid rgba(220, 38, 38, 0.20);
   border-radius: 9999px;
   padding: 0.25rem 0.75rem;
@@ -429,7 +481,44 @@
   background-color: rgba(253, 237, 231, 0.40);
 }
 
+/* ── Loading skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, #E2E5EC 25%, #EEF0F4 37%, #E2E5EC 63%);
+  background-size: 400% 100%;
+  border-radius: 8px;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0 50%; }
+}
+
+/* ── Keyboard focus (visible only for keyboard users) ── */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #B93A0E;
+  outline-offset: 2px;
+}
+.focus-ring-light:focus-visible,
+.dark-surface :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline-color: #FFFFFF; }
+
+.scrollbar-hide { scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
 /* ── Keyframes & Animations ── */
+@keyframes drawerSlide {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+.animate-drawer-slide {
+  animation: drawerSlide 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
 @keyframes blurFadeUp {
   from { opacity: 0; filter: blur(12px); transform: translateY(24px); }
   to   { opacity: 1; filter: blur(0); transform: translateY(0); }
@@ -451,4 +540,13 @@
 }
 .animate-fade-in {
   animation: fadeIn 300ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

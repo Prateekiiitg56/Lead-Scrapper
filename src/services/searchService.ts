@@ -1,429 +1,319 @@
-import { getWebhookUrls } from '@/lib/utils';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { errorMessage } from '@/lib/utils';
 import { isOutreachAuthorized } from '@/services/permissionService';
-import type { SearchResponse, SendResponse, SendEmailResponse, StatsResponse } from '@/types/api';
+import { normalizePhone, recordOutreach } from '@/services/leadService';
+import type { SearchLead, StatsResponse } from '@/types/api';
 import type { EmailTemplateId } from '@/lib/constants';
+import type { Lead } from '@/types/database';
 
-const META_PHONE_NUMBER_ID = import.meta.env.VITE_META_PHONE_NUMBER_ID || '';
-const META_ACCESS_TOKEN = import.meta.env.VITE_META_ACCESS_TOKEN || '';
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const WEBHOOKS = {
+  search: import.meta.env.VITE_N8N_SEARCH_URL || '',
+  send: import.meta.env.VITE_N8N_SEND_URL || '',
+  stats: import.meta.env.VITE_N8N_STATS_URL || '',
+  email: import.meta.env.VITE_N8N_EMAIL_URL || '',
+};
 
-/** Call the existing n8n lead search webhook */
-export async function searchLeads(
-  businessType: string,
-  businessTypeOther: string,
-  location: string
-): Promise<SearchResponse> {
-  const urls = getWebhookUrls();
-  if (!urls.search) throw new Error('Search webhook URL not configured');
+/** Google Places + detail lookups + website scraping in n8n routinely take 30–60s. */
+const SEARCH_TIMEOUT_MS = 120_000;
+const SEND_TIMEOUT_MS = 45_000;
 
+export type WebhookErrorKind = 'config' | 'timeout' | 'network' | 'http' | 'malformed' | 'rejected';
+
+export class WebhookError extends Error {
+  readonly kind: WebhookErrorKind;
+  constructor(kind: WebhookErrorKind, message: string) {
+    super(message);
+    this.name = 'WebhookError';
+    this.kind = kind;
+  }
+}
+
+export class PermissionError extends Error {
+  constructor() {
+    super('Outreach is restricted to authorized admin accounts.');
+    this.name = 'PermissionError';
+  }
+}
+
+async function callWebhook(
+  name: keyof typeof WEBHOOKS,
+  init: { method: 'GET' | 'POST'; body?: unknown },
+  timeoutMs: number
+): Promise<unknown> {
+  const url = WEBHOOKS[name];
+  if (!url) throw new WebhookError('config', `The ${name} webhook is not configured (VITE_N8N_${name.toUpperCase()}_URL).`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
   try {
-    const res = await fetch(urls.search, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        business_type: businessType,
-        business_type_other: businessTypeOther,
-        location,
-      }),
+    res = await fetch(url, {
+      method: init.method,
+      headers: init.body ? { 'Content-Type': 'application/json' } : undefined,
+      body: init.body ? JSON.stringify(init.body) : undefined,
+      signal: controller.signal,
     });
-
-    if (!res.ok) {
-      const err = new Error(`Search failed with status ${res.status}`);
-      (err as any).status = res.status;
-      throw err;
-    }
-    return res.json();
   } catch (err) {
-    if (typeof window !== 'undefined' && (window as any).__REPORT_API_ERROR__) {
-      (window as any).__REPORT_API_ERROR__(err);
+    if (controller.signal.aborted) {
+      throw new WebhookError('timeout', `The ${name} service did not respond within ${Math.round(timeoutMs / 1000)}s. Try again.`);
     }
-    throw err;
-  }
-}
-
-/** Call the n8n send message webhook AND sync lead to Supabase */
-export async function sendWhatsAppMessage(
-  name: string,
-  phone: string,
-  address: string,
-  website?: string,
-  templateName?: string,
-  userEmail?: string | null,
-  userId?: string
-): Promise<SendResponse> {
-  // Enforce admin permission check to prevent unauthorized Meta messaging fees
-  if (!isOutreachAuthorized(userEmail)) {
-    throw new Error('PERMISSION_RESTRICTED: WhatsApp outreach is restricted to authorized admin accounts.');
+    throw new WebhookError('network', `Could not reach the ${name} service. Check your connection or the n8n instance. (${(err as Error).message})`);
+  } finally {
+    clearTimeout(timer);
   }
 
-  const urls = getWebhookUrls();
-  if (!urls.send) throw new Error('Send webhook URL not configured');
-
-  const selectedTemplate = templateName || (website ? 'website_automation_pitch_v2' : 'first_outreach');
-
-  // 1. Call n8n Webhook to dispatch WhatsApp template
-  const res = await fetch(urls.send, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      phone,
-      address,
-      website: website || '',
-      template_name: selectedTemplate,
-    }),
-  });
-
-  if (!res.ok) throw new Error(`Send failed: ${res.status}`);
-  const data: SendResponse = await res.json();
-
-  if (data.success === false) {
-    throw new Error(data.message || 'WhatsApp message dispatch failed');
-  }
-
-  // 2. Client-side fallback sync: Save lead & conversation to Supabase directly
-  try {
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
-
-    // Upsert lead in Supabase
-    const { data: leadData, error: leadErr } = await supabase
-      .from('leads')
-      .upsert(
-        {
-          business_name: name,
-          phone: formattedPhone,
-          address: address,
-          website: website || null,
-          status: 'CONTACTED',
-          last_contact_at: new Date().toISOString(),
-          ...(userId ? { assigned_user_id: userId } : {}),
-        },
-        { onConflict: 'phone' }
-      )
-      .select('id')
-      .single();
-
-    if (leadErr) {
-      console.error('Supabase lead upsert error:', leadErr);
+  const text = await res.text();
+  let json: unknown = null;
+  if (text.trim()) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new WebhookError('malformed', `The ${name} service returned an invalid response (HTTP ${res.status}).`);
     }
-
-    if (leadData?.id) {
-      // Save conversation record in Supabase
-      const { error: convErr } = await supabase.from('conversations').insert({
-        lead_id: leadData.id,
-        direction: 'OUTBOUND',
-        message: selectedTemplate === 'website_automation_pitch_v2' ? 'Website Automation template sent' : 'Template message sent',
-        message_type: 'template',
-        template_name: selectedTemplate,
-        status: 'sent',
-      });
-      if (convErr) {
-        console.error('Supabase conversation insert error:', convErr);
-      }
-    }
-  } catch (err) {
-    console.error('Client-side Supabase sync error:', err);
   }
-
-  return data;
-}
-
-/** Send custom freeform text message directly to recipient via Meta WhatsApp Cloud API */
-export async function sendCustomWhatsAppText(phone: string, text: string, userEmail?: string | null): Promise<boolean> {
-  if (!isOutreachAuthorized(userEmail)) {
-    console.error('Outreach restricted: user is not authorized to send Meta WhatsApp messages.');
-    return false;
-  }
-
-  try {
-    const digitsOnly = phone.replace(/[^0-9]/g, '');
-    const formattedTo = digitsOnly.length === 10 ? `91${digitsOnly}` : digitsOnly;
-
-    const res = await fetch(`https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: formattedTo,
-        type: 'text',
-        text: { body: text },
-      }),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json();
-      console.error('Meta Cloud API text message error:', errData);
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    console.error('Failed to dispatch custom WhatsApp text:', err);
-    return false;
-  }
-}
-
-/** Send custom freeform WhatsApp text message AND sync to Supabase ONLY AFTER Meta confirms success */
-export async function sendCustomWhatsAppMessageAndSync(
-  name: string,
-  phone: string,
-  address: string,
-  text: string,
-  website?: string,
-  userId?: string
-): Promise<SendResponse> {
-  const digitsOnly = phone.replace(/[^0-9]/g, '');
-  const formattedTo = digitsOnly.length === 10 ? `91${digitsOnly}` : digitsOnly;
-
-  // 1. Dispatch custom text to Meta Cloud API first
-  const res = await fetch(`https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: formattedTo,
-      type: 'text',
-      text: { body: text },
-    }),
-  });
 
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    const errMsg =
-      errData.error?.message ||
-      errData.error?.error_data?.details ||
-      `Meta API request failed with status ${res.status}`;
-    throw new Error(errMsg);
+    const msg = (json as { message?: string } | null)?.message;
+    throw new WebhookError('http', msg || `The ${name} service failed with HTTP ${res.status}.`);
   }
-
-  // 2. Meta confirmed success -> ONLY NOW upsert lead and save conversation to Supabase
-  const formattedPhone = phone.startsWith('+') ? phone : `+${digitsOnly}`;
-
-  const { data: leadData, error: leadErr } = await supabase
-    .from('leads')
-    .upsert(
-      {
-        business_name: name,
-        phone: formattedPhone,
-        address: address,
-        website: website || null,
-        status: 'CONTACTED',
-        last_contact_at: new Date().toISOString(),
-        ...(userId ? { assigned_user_id: userId } : {}),
-      },
-      { onConflict: 'phone' }
-    )
-    .select('id')
-    .single();
-
-  if (leadErr) {
-    console.error('Supabase lead upsert error:', leadErr);
+  if (json === null) {
+    throw new WebhookError('malformed', `The ${name} service returned an empty response. The workflow may have stopped before replying.`);
   }
-
-  if (leadData?.id) {
-    const { error: convErr } = await supabase.from('conversations').insert({
-      lead_id: leadData.id,
-      direction: 'OUTBOUND',
-      message: text,
-      message_type: 'text',
-      status: 'sent',
-    });
-    if (convErr) {
-      console.error('Supabase conversation insert error:', convErr);
-    }
-  }
-
-  return { success: true, message: 'Custom WhatsApp message sent successfully' };
+  return json;
 }
 
-/** Generate a personalized cold email using Gemini AI */
+function asString(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '';
+}
+
+/** Coerce one raw n8n lead into a SearchLead, or null when it has no usable name. */
+function normalizeSearchLead(raw: unknown, city: string | null): SearchLead | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const name = asString(r.name ?? r.business_name);
+  if (!name) return null;
+  const website = asString(r.website);
+  const hasWebsiteFlag = asString(r.has_website).toLowerCase();
+  const rating = Number.parseFloat(asString(r.rating));
+  return {
+    name,
+    phone: asString(r.phone),
+    address: asString(r.address),
+    rating: Number.isFinite(rating) ? rating : null,
+    has_website: hasWebsiteFlag ? hasWebsiteFlag === 'true' : !!website,
+    website,
+    place_id: asString(r.place_id ?? r.google_place_id) || null,
+    email: asString(r.email) || null,
+    linkedin_url: asString(r.linkedin_url) || null,
+    city,
+  };
+}
+
+export interface SearchResult {
+  leads: SearchLead[];
+  /** Rows dropped because they repeated a phone/place already in the results. */
+  duplicates: number;
+  /** Rows dropped because they had no business name. */
+  invalid: number;
+}
+
+/** Call the n8n Google Places search webhook, validating and de-duplicating the response. */
+export async function searchLeads(businessType: string, businessTypeOther: string, location: string): Promise<SearchResult> {
+  const json = await callWebhook(
+    'search',
+    { method: 'POST', body: { business_type: businessType, business_type_other: businessTypeOther, location } },
+    SEARCH_TIMEOUT_MS
+  );
+
+  const body = json as { success?: unknown; message?: unknown; leads?: unknown };
+  const rawLeads = Array.isArray(json) ? json : body.leads;
+  if (!Array.isArray(json) && body.success === false) {
+    throw new WebhookError('rejected', asString(body.message) || 'The search workflow reported a failure.');
+  }
+  if (!Array.isArray(rawLeads)) {
+    throw new WebhookError('malformed', 'The search service response did not contain a leads list.');
+  }
+
+  const city = location.split(',')[0].trim() || null;
+  const seen = new Set<string>();
+  const leads: SearchLead[] = [];
+  let duplicates = 0;
+  let invalid = 0;
+  for (const raw of rawLeads) {
+    const lead = normalizeSearchLead(raw, city);
+    if (!lead) { invalid++; continue; }
+    const key = lead.place_id || normalizePhone(lead.phone) || `${lead.name}|${lead.address}`.toLowerCase();
+    if (seen.has(key)) { duplicates++; continue; }
+    seen.add(key);
+    leads.push(lead);
+  }
+  return { leads, duplicates, invalid };
+}
+
+export type WhatsAppTemplate = 'website_automation_pitch_v2' | 'first_outreach';
+
+export interface OutreachResult {
+  lead: Lead | null;
+  /** Set when the message was sent but the CRM record could not be saved. */
+  crmError: string | null;
+}
+
+function searchLeadToInput(lead: SearchLead, category?: string) {
+  return {
+    business_name: lead.name,
+    phone: lead.phone,
+    email: lead.email,
+    address: lead.address,
+    website: lead.website,
+    rating: lead.rating,
+    category: category || null,
+    city: lead.city,
+    linkedin_url: lead.linkedin_url,
+  };
+}
+
+async function recordAfterSend(
+  userId: string,
+  input: Parameters<typeof recordOutreach>[1],
+  conversation: Parameters<typeof recordOutreach>[2]
+): Promise<OutreachResult> {
+  try {
+    return { lead: await recordOutreach(userId, input, conversation), crmError: null };
+  } catch (err) {
+    return { lead: null, crmError: errorMessage(err, 'Could not update the CRM.') };
+  }
+}
+
+/** Dispatch a Meta-approved WhatsApp template through n8n, then log it in the user's CRM. */
+export async function sendWhatsAppTemplate(
+  lead: SearchLead,
+  template: WhatsAppTemplate,
+  user: { id: string; email?: string | null },
+  category?: string
+): Promise<OutreachResult> {
+  if (!isOutreachAuthorized(user.email)) throw new PermissionError();
+  const phone = normalizePhone(lead.phone);
+  if (!phone) throw new WebhookError('config', 'This lead has no valid phone number for WhatsApp.');
+
+  const json = (await callWebhook(
+    'send',
+    {
+      method: 'POST',
+      body: { name: lead.name, phone, address: lead.address, website: lead.website || '', template_name: template, user_id: user.id },
+    },
+    SEND_TIMEOUT_MS
+  )) as { success?: unknown; message?: unknown };
+
+  if (json.success !== true) {
+    throw new WebhookError('rejected', asString(json.message) || 'WhatsApp dispatch was not confirmed by the server.');
+  }
+
+  return recordAfterSend(user.id, searchLeadToInput(lead, category), {
+    message: template === 'website_automation_pitch_v2' ? 'Website automation pitch (template)' : 'First outreach (template)',
+    message_type: 'template',
+    template_name: template,
+  });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_RE.test(email.trim());
+}
+
+/** Send a cold email through the n8n Gmail webhook, then log it in the user's CRM. */
+export async function sendColdEmail(opts: {
+  lead: SearchLead;
+  toEmail: string;
+  templateId: EmailTemplateId;
+  subject?: string;
+  body?: string;
+  businessType?: string;
+  user: { id: string; email?: string | null };
+}): Promise<OutreachResult> {
+  const toEmail = opts.toEmail.trim();
+  if (!isValidEmail(toEmail)) throw new WebhookError('config', 'Enter a valid recipient email address.');
+
+  const json = (await callWebhook(
+    'email',
+    {
+      method: 'POST',
+      body: {
+        to_email: toEmail,
+        from_email: opts.user.email || '',
+        business_name: opts.lead.name,
+        address: opts.lead.address,
+        website: opts.lead.website || '',
+        template_id: opts.templateId,
+        subject: opts.subject || '',
+        custom_body: opts.body || '',
+        business_type: opts.businessType || '',
+        user_id: opts.user.id,
+      },
+    },
+    SEND_TIMEOUT_MS
+  )) as { success?: unknown; message?: unknown };
+
+  if (json.success !== true) {
+    throw new WebhookError('rejected', asString(json.message) || 'Email dispatch was not confirmed by the server.');
+  }
+
+  return recordAfterSend(
+    opts.user.id,
+    { ...searchLeadToInput(opts.lead, opts.businessType), email: toEmail },
+    { message: opts.body || `Email template sent: ${opts.templateId}`, message_type: 'email', template_name: opts.templateId }
+  );
+}
+
+/** Pull the `{ error }` message out of a failed Edge Function call. */
+async function edgeFunctionError(error: unknown, fallback: string, fn: string): Promise<Error> {
+  if (error instanceof FunctionsHttpError) {
+    const res = error.context as Response;
+    let body: { error?: string; message?: string } | null = null;
+    try {
+      body = await res.json();
+    } catch { /* not JSON */ }
+    if (body?.error) return new Error(body.error);
+    if (res.status === 404) {
+      return new Error(`This feature needs the "${fn}" Supabase Edge Function, which is not deployed. See README → Edge Functions.`);
+    }
+    if (body?.message) return new Error(body.message);
+    return new Error(`${fallback} (HTTP ${res.status})`);
+  }
+  return new Error(error instanceof Error && error.message ? error.message : fallback);
+}
+
+/** Draft a personalized cold email. Gemini runs server-side in the `ai-email-draft` Edge Function. */
 export async function generateAIEmail(opts: {
   businessName: string;
   businessType: string;
   address: string;
   website?: string;
-  rating?: string;
 }): Promise<{ subject: string; body: string }> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured. Add VITE_GEMINI_API_KEY to .env.local');
-  }
-
-  const cleanAddress = opts.address ? opts.address.replace(/[\r\n]+/g, ' ').trim() : '';
-  const cleanWebsite = opts.website ? opts.website.replace(/[\r\n]+/g, '').trim() : '';
-
-  const prompt = `You are a top-tier B2B outreach specialist writing a cold email for Unbias.xai (a web design & AI automation agency).
-
-TARGET BUSINESS:
-- Name: ${opts.businessName}
-- Industry / Category: ${opts.businessType}
-- Location: ${cleanAddress || 'N/A'}
-- Website: ${cleanWebsite || 'No website detected'}
-
-GUIDELINES:
-1. Start directly with a natural greeting: "Hi ${opts.businessName} Team,".
-2. Open with a warm, genuine 1-sentence compliment about their reputation in ${cleanAddress || 'their area'}. Do NOT quote raw rating numbers.
-3. Mention 2 specific, high-value growth opportunities tailored to a ${opts.businessType} (e.g. if restaurant: 24/7 AI table reservation assistant & VIP guest engagement automation; if salon/clinic: 24/7 appointment booking bot & review automation; if gym: membership lead capture).
-4. Sound completely natural, professional, direct, and human.
-5. ABSOLUTELY NO markdown formatting, NO asterisks (**), NO labels (like Pain Point:, Subject:, Type:), NO bullet points with markdown.
-6. Keep it concise (under 120 words across 3 short paragraphs).
-7. End with a friendly 1-sentence invite for a brief 10-minute call.
-8. Sign off as:
-Best regards,
-Unbias.xai Team`;
-
-  const subjectPrompt = `Write a short, professional email subject line (3 to 6 words) for a cold email to "${opts.businessName}". Return ONLY the plain subject line text. ABSOLUTELY NO quotation marks, NO labels, NO prefixes like "Subject:".`;
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-
-  const [bodyRes, subjectRes] = await Promise.all([
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1200 },
-      }),
-    }),
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: subjectPrompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 100 },
-      }),
-    }),
-  ]);
-
-  if (!bodyRes.ok) {
-    const errText = await bodyRes.text().catch(() => '');
-    if (bodyRes.status === 429 || errText.includes('RESOURCE_EXHAUSTED') || errText.includes('quota')) {
-      throw new Error('Gemini API rate limit / quota reached. Please wait a moment or select a standard email template.');
-    }
-    if (bodyRes.status === 401 || errText.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED') || errText.includes('UNAUTHENTICATED')) {
-      throw new Error('Invalid Gemini API Key format. In Google AI Studio (aistudio.google.com/apikey), click "Create API key in NEW project" to get a valid AI Studio key (starts with AIzaSy...).');
-    }
-    throw new Error(`Gemini API error (${bodyRes.status}): ${errText.slice(0, 200)}`);
-  }
-
-  const bodyJson = await bodyRes.json();
-  const subjectJson = subjectRes.ok ? await subjectRes.json() : null;
-
-  const body = bodyJson?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  const subject = subjectJson?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
-    || `Quick question for ${opts.businessName}`;
-
-  if (!body) {
-    throw new Error('Gemini returned an empty response. Please try again.');
-  }
-
-  return { subject, body };
+  const { data, error } = await supabase.functions.invoke('ai-email-draft', { body: opts });
+  if (error) throw await edgeFunctionError(error, 'AI drafting failed.', 'ai-email-draft');
+  if (!data?.body || typeof data.body !== 'string') throw new Error('AI drafting returned an empty draft. Try again.');
+  return { subject: String(data.subject || `Quick question for ${opts.businessName}`), body: data.body };
 }
 
-/** Send cold email via n8n email webhook AND sync lead to Supabase */
-export async function sendColdEmail(
-  name: string,
-  email: string,
-  address: string,
-  website?: string,
-  templateId?: EmailTemplateId,
-  userEmail?: string | null,
-  userId?: string,
-  customSubject?: string,
-  customBody?: string,
-  businessType?: string
-): Promise<SendEmailResponse> {
-  if (!email || !email.trim()) {
-    throw new Error('Email address is required to send a cold email.');
-  }
-
-  const urls = getWebhookUrls();
-  if (!urls.email) throw new Error('Email webhook URL not configured');
-
-  const selectedTemplate = templateId || 'first_outreach_email';
-
-  // 1. Call n8n email webhook
-  const res = await fetch(urls.email, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      to_email: email.trim(),
-      from_email: userEmail || '',
-      business_name: name,
-      address,
-      website: website || '',
-      template_id: selectedTemplate,
-      subject: customSubject || '',
-      custom_body: customBody || '',
-      business_type: businessType || '',
-    }),
-  });
-
-  if (!res.ok) throw new Error(`Email send failed: ${res.status}`);
-  const data: SendEmailResponse = await res.json();
-
-  if (data.success === false) {
-    throw new Error(data.message || 'Email dispatch failed');
-  }
-
-  // 2. Client-side Supabase sync: upsert lead & insert conversation (mirrors sendWhatsAppMessage)
-  try {
-    const { data: leadData, error: leadErr } = await supabase
-      .from('leads')
-      .upsert(
-        {
-          business_name: name,
-          email: email.trim(),
-          address: address,
-          website: website || null,
-          status: 'CONTACTED',
-          last_contact_at: new Date().toISOString(),
-          ...(userId ? { assigned_user_id: userId } : {}),
-        },
-        { onConflict: 'email' }
-      )
-      .select('id')
-      .single();
-
-    if (leadErr) {
-      console.error('Supabase lead upsert (email) error:', leadErr);
-    }
-
-    if (leadData?.id) {
-      const { error: convErr } = await supabase.from('conversations').insert({
-        lead_id: leadData.id,
-        direction: 'OUTBOUND',
-        message: customBody || `Email template sent: ${selectedTemplate}`,
-        message_type: 'email',
-        template_name: selectedTemplate,
-        status: 'sent',
-      });
-      if (convErr) {
-        console.error('Supabase conversation insert (email) error:', convErr);
-      }
-    }
-  } catch (err) {
-    console.error('Client-side Supabase sync error (email):', err);
-  }
-
-  return data;
+/**
+ * Send a freeform WhatsApp reply from the Inbox. The `whatsapp-send-text` Edge Function
+ * holds the Meta token, reads the phone from the user's own lead, and logs the message.
+ */
+export async function sendInboxReply(leadId: string, text: string): Promise<{ warning: string | null }> {
+  const { data, error } = await supabase.functions.invoke('whatsapp-send-text', { body: { lead_id: leadId, text } });
+  if (error) throw await edgeFunctionError(error, 'WhatsApp reply failed.', 'whatsapp-send-text');
+  return { warning: typeof data?.warning === 'string' ? data.warning : null };
 }
 
-/** Call the existing n8n stats webhook */
+/** Outreach counters from the n8n stats webhook (Google Sheets log). */
 export async function fetchStats(): Promise<StatsResponse> {
-  const urls = getWebhookUrls();
-  if (!urls.stats) throw new Error('Stats webhook URL not configured');
-
-  const res = await fetch(urls.stats);
-  if (!res.ok) throw new Error(`Stats failed: ${res.status}`);
-  return res.json();
+  const json = (await callWebhook('stats', { method: 'GET' }, SEND_TIMEOUT_MS)) as Record<string, unknown>;
+  const sent = Number(json.sent_this_month);
+  const total = Number(json.total_logged);
+  if (!Number.isFinite(sent) || !Number.isFinite(total)) {
+    throw new WebhookError('malformed', 'The stats service returned an unexpected response.');
+  }
+  return { success: true, sent_this_month: sent, total_logged: total };
 }

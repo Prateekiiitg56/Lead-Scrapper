@@ -5,17 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
     "@tanstack/react-query": "^5.101.4",
+    "animejs": "^4.5.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "gsap": "^3.15.0",
     "lucide-react": "^1.28.0",
+    "motion": "^13.4.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",

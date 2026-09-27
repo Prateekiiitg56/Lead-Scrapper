@@ -62,29 +62,43 @@ npm install
 ```
 
 ### Step 2: Configure Environment Variables
-Create a `.env.local` file in the root folder:
+Copy `.env.example` to `.env.local` and fill it in. Only public values belong there — every `VITE_*` variable ships in the browser bundle.
 
-```env
-VITE_SUPABASE_URL=https://your-supabase-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-VITE_N8N_SEARCH_URL=https://your-n8n-instance.com/webhook/search
-VITE_N8N_SEND_URL=https://your-n8n-instance.com/webhook/send
-VITE_N8N_STATS_URL=https://your-n8n-instance.com/webhook/stats
-VITE_N8N_EMAIL_URL=https://your-n8n-instance.com/webhook/send-email
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Supabase project (anon key only — never the service-role key) |
+| `VITE_N8N_SEARCH_URL` | n8n `unbias-lead-search` webhook |
+| `VITE_N8N_SEND_URL` | n8n `unbias-send-message` webhook (WhatsApp templates) |
+| `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
+| `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
+| `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary) |
+
+### Step 3: Database
+Run in the Supabase SQL editor, in order:
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/migrations/002_email_linkedin_channels.sql` — **required** for email outreach and for saving email-only leads. Without it the app still saves phone leads but shows an explicit "missing email/LinkedIn columns" error for email paths.
+3. `supabase/fix_rls_policies.sql` — per-user ownership (`leads.assigned_user_id = auth.uid()`).
+4. `supabase/migrations/003_harden_users_rls.sql` — removes the permissive `users`/`followups`/`templates`/`analytics` policies from 001.
+
+### Step 4: Edge Functions (server-side secrets)
+Inbox WhatsApp replies and AI email drafting call Meta and Gemini with secret keys, so they run as Supabase Edge Functions instead of in the browser:
+
+```bash
+supabase functions deploy whatsapp-send-text
+supabase functions deploy ai-email-draft
+supabase secrets set META_ACCESS_TOKEN=... META_PHONE_NUMBER_ID=... GEMINI_API_KEY=...
+supabase secrets set AUTHORIZED_ADMIN_EMAILS=you@example.com   # optional allowlist for WhatsApp replies
 ```
 
-### Step 3: Run Development Server
+Both verify the caller's Supabase JWT and act through RLS. `whatsapp-send-text` reads the phone number from the caller's own lead, never from the request. Until deployed, those two buttons show a "function is not deployed" error; everything else works.
+
+**Rotate** any Meta token or Gemini key that was previously in `VITE_META_ACCESS_TOKEN` / `VITE_GEMINI_API_KEY`: earlier builds embedded them in public JavaScript.
+
+### Step 5: Run & Verify
 ```bash
 npm run dev
-```
-Open `http://localhost:5173` in your browser.
-
-### Step 4: Verify Type Safety & Build
-```bash
-# Run TypeScript check
-npm run typecheck
-
-# Build production bundle
+npm run typecheck   # checks src/ and vite.config.ts
+npm run lint
 npm run build
 ```
 
@@ -93,7 +107,7 @@ npm run build
 ## User Walkthrough
 
 ### 1. Authentication & Onboarding
-- Navigate to `/login` or click **Get Started** from the landing page (`/hero`).
+- Navigate to `/login` or click **Get started** on the landing page (`/`, also `/hero`). Visiting a protected page while signed out redirects to `/login` and returns you there after sign-in.
 - Log in with email/password or Google OAuth.
 - Upon successful sign-in, the **Welcome Modal** automatically pops up:
   - **Lead Generation**: Navigates to `/search` to start prospecting.
@@ -103,11 +117,11 @@ npm run build
 - Click **Search** in the navigation bar.
 - Choose a **Business Category** (e.g., *Restaurant*, *Dentist*, *Plumber*, *Real Estate*, or custom) and a target **Location / City**.
 - Click **Discover Leads** to execute the scraping workflow.
-- Results highlight **Target Leads** (businesses without websites) for website pitch outreach.
+- Results flag businesses without websites. **Save** adds a result to your CRM; results already in your CRM show *In CRM · status*.
 
 ### 3. Contact Actions & Outreach Modals
 - Click any contact icon on a lead card or row:
-  - **WhatsApp** (Glyph in `#25D366`): Opens the WhatsApp composer modal with template choices (*Website Pitch*, *Custom Message*).
+  - **WhatsApp**: Opens the composer with the two Meta-approved templates (*Website pitch*, *Standard outreach*). Disabled when the lead has no phone.
   - **Email** (Gmail Glyph): Opens the Email composer modal supporting standard templates and **AI Personalized Email** generation via Gemini.
   - **LinkedIn** (Glyph in `#0A66C2`): Opens the lead's LinkedIn profile or deep-links a company search on LinkedIn.
 
@@ -151,12 +165,16 @@ Lead-Scrapper/
 │   │   ├── legal/                    # TermsPage & PrivacyPage compliance views
 │   │   └── search/                   # Lead discovery, search cards, & outreach triggers
 │   ├── context/
-│   │   └── ApiErrorContext.tsx       # Global API error notification context
+│   │   ├── ApiErrorContext.tsx       # Server-unreachable overlay driven by React Query errors
+│   │   ├── AuthContext.tsx           # Single Supabase auth session provider
+│   │   └── authState.ts              # Auth context object + types
 │   ├── hooks/
 │   │   ├── useAuth.ts                # Supabase authentication state hook
 │   │   ├── useConversations.ts       # Inbox chat threads & unread count hooks
 │   │   ├── useCountUp.ts             # Animated count-up numbers hook
-│   │   └── useLeads.ts               # Lead listing, stats, and real-time subscription hook
+│   │   ├── useLeads.ts               # Cached lead query + optimistic update/delete mutations
+│   │   ├── useDialog.ts              # Modal focus trap, Escape, scroll lock, focus restore
+│   │   └── useRealtimeSync.ts        # One Supabase realtime channel → React Query invalidation
 │   ├── lib/
 │   │   ├── constants.ts              # Lead statuses, colors, categories, templates
 │   │   ├── supabase.ts               # Supabase JS client instantiation
@@ -189,42 +207,31 @@ Lead-Scrapper/
 
 ## Integration Contracts (n8n Webhooks)
 
-### 1. Lead Search Webhook (`VITE_N8N_SEARCH_URL`)
-- **Method**: `POST`
-- **Body**:
-  ```json
-  {
-    "category": "Dentist",
-    "location": "San Francisco, CA"
-  }
-  ```
-- **Response**: Array of lead objects (`business_name`, `phone`, `address`, `rating`, `website`, `category`, `linkedin_url`, `email`).
+Verified against the exported workflows in this repo.
 
-### 2. WhatsApp Outreach Webhook (`VITE_N8N_SEND_URL`)
-- **Method**: `POST`
-- **Body**:
-  ```json
-  {
-    "phone": "+14155552671",
-    "business_name": "Bay Area Dental",
-    "message": "Hi, noticed your website is offline. We build high-converting sites for local practices."
-  }
-  ```
+### Lead search — `POST VITE_N8N_SEARCH_URL`
+```json
+{ "business_type": "Restaurant", "business_type_other": "", "location": "Guwahati, Assam" }
+```
+Response (`Respond With Leads`): `{ "success": true, "count": 2, "leads": [ { "name", "phone", "address", "rating", "has_website": "true"|"false", "website", "email", "linkedin_url" } ] }`.
+The workflow drops places without a phone and phones already in the Google Sheet log. The client validates the response, removes duplicates (place id / phone), skips rows without a name, and times out after 120 s.
 
-### 3. Email Outreach Webhook (`VITE_N8N_EMAIL_URL`)
-- **Method**: `POST`
-- **Body**:
-  ```json
-  {
-    "to_email": "contact@bayareadental.com",
-    "business_name": "Bay Area Dental",
-    "address": "123 Market St, San Francisco, CA",
-    "website": "",
-    "template_id": "website_pitch_email",
-    "subject": "Website Opportunity for Bay Area Dental",
-    "custom_body": "Hello, I noticed your practice doesn't currently have an active website..."
-  }
-  ```
+### WhatsApp template — `POST VITE_N8N_SEND_URL`
+```json
+{ "name": "Bay Area Dental", "phone": "+14155552671", "address": "...", "website": "", "template_name": "website_automation_pitch_v2" | "first_outreach", "user_id": "<auth uid>" }
+```
+Response: `{ "success": true|false, "message": "..." }`. Only `success: true` counts as sent. The client then saves the lead to the caller's CRM (status `CONTACTED`, never downgrading a later stage) and logs the conversation.
+
+### Email — `POST VITE_N8N_EMAIL_URL`
+```json
+{ "to_email": "...", "from_email": "...", "business_name": "...", "address": "...", "website": "", "template_id": "website_pitch_email", "subject": "", "custom_body": "", "business_type": "", "user_id": "<auth uid>" }
+```
+Response: `{ "success": true, "message": "sent" }`, or HTTP 400 `{ "success": false, "message": "Email address is required" }`.
+
+### Stats — `GET VITE_N8N_STATS_URL`
+Response: `{ "success": true, "sent_this_month": 7, "total_logged": 42 }` (counted from the Google Sheet).
+
+> The n8n WhatsApp workflow also upserts leads with the service-role key but does not set `assigned_user_id`. Those rows are invisible to users under RLS; the app therefore records its own CRM row per user. `user_id` is now sent so the workflow can set ownership if you update it.
 
 ---
 

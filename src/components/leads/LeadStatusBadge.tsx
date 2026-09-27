@@ -13,26 +13,30 @@ const STATUS_DOT: Record<LeadStatus, string> = {
   LOST:           'bg-red-500',
 };
 
-export function LeadStatusBadge({
-  status,
-  onClick,
-  active,
-}: {
-  status: LeadStatus;
-  onClick?: () => void;
-  active?: boolean;
-}) {
+const BASE = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium tracking-tight transition-all duration-150 text-[#374151] whitespace-nowrap';
+
+/** Read-only status label, or a toggle button when `onClick` is given. */
+export function LeadStatusBadge({ status, onClick, active }: { status: LeadStatus; onClick?: () => void; active?: boolean }) {
   const dot = STATUS_DOT[status] || STATUS_DOT.NEW;
+  const content = (
+    <>
+      <span className={`w-[6px] h-[6px] rounded-full ${dot} flex-shrink-0`} aria-hidden="true" />
+      {STATUS_LABELS[status] ?? status}
+    </>
+  );
+
+  if (!onClick) return <span className={BASE}>{content}</span>;
 
   return (
-    <span
+    <button
+      type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium tracking-tight transition-all duration-150 select-none text-[#4B5264] bg-transparent
-        ${onClick ? 'cursor-pointer hover:bg-[#F4F5F8] active:scale-[0.97]' : ''}
-        ${active ? 'ring-2 ring-[#F0501E]/40 ring-offset-1 font-bold bg-[#FDEDE7]/40' : ''}`}
+      aria-pressed={!!active}
+      className={`${BASE} min-h-8 px-2.5 cursor-pointer hover:bg-[#F4F5F8] active:scale-[0.97] border ${
+        active ? 'border-[#D44314] font-bold bg-[#FDEDE7] text-[#14161A]' : 'border-transparent'
+      }`}
     >
-      <span className={`w-[6px] h-[6px] rounded-full ${dot} flex-shrink-0`} />
-      {STATUS_LABELS[status]}
-    </span>
+      {content}
+    </button>
   );
 }

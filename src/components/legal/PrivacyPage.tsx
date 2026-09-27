@@ -6,27 +6,24 @@ export function PrivacyPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="relative min-h-screen bg-[#D7D5D5] font-sans text-[#14161A] select-none overflow-x-hidden">
+    <div className="relative min-h-screen bg-[#D7D5D5] font-sans text-[#14161A] overflow-x-hidden">
       {/* Bloom Field Animated Mesh Gradient Background */}
       <AlmoayyedGradient opacity={0.75} />
 
       {/* Edge-to-Edge Container */}
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header Navigation */}
-        <header className="px-6 lg:px-12 py-6 border-b border-white/10 flex items-center justify-between bg-[#080a0c]/80 backdrop-blur-md sticky top-0 z-50">
-          <div
-            onClick={() => navigate('/hero')}
-            className="flex items-center gap-3 cursor-pointer group"
-          >
+        <header className="dark-surface px-4 sm:px-6 lg:px-12 py-4 sm:py-6 border-b border-white/10 flex items-center justify-between bg-[#080a0c]/80 backdrop-blur-md sticky top-0 z-50">
+          <Link to="/hero" className="flex items-center gap-3 group" aria-label="Lead-Scrapper home">
             <div className="w-9 h-9 rounded-xl bg-[#F0501E] text-white flex items-center justify-center shadow-md shadow-[#F0501E]/20 group-hover:scale-105 transition-transform">
               <Layers className="w-5 h-5 stroke-[2.5]" />
             </div>
-            <span className="text-[22px] font-sans font-bold text-white tracking-tight">
+            <span className="hidden sm:inline text-[22px] font-sans font-bold text-white tracking-tight">
               Lead-Scrapper
             </span>
-          </div>
+          </Link>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <button
               type="button"
               onClick={() => navigate(-1)}
@@ -37,7 +34,7 @@ export function PrivacyPage() {
             </button>
             <Link
               to="/login"
-              className="bg-[#F0501E] hover:bg-[#F0501E]/90 text-white text-[13px] font-bold px-5 py-2 rounded-full shadow-md transition-all cursor-pointer"
+              className="bg-[#D44314] hover:bg-[#B93A0E] text-white text-[13px] font-bold px-4 sm:px-5 py-2 rounded-full whitespace-nowrap shadow-md transition-all cursor-pointer"
             >
               Launch Dashboard
             </Link>

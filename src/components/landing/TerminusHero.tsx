@@ -45,12 +45,13 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
   };
 
   return (
-    <div className="relative w-full h-[100svh] overflow-hidden bg-[#080a0c] text-white select-none">
+    <div className="dark-surface relative w-full h-[100svh] overflow-hidden bg-[#080a0c] text-white">
       {/* ── VIDEO (z-0) ── */}
       <div className="fixed inset-0 w-full h-[100svh] z-0 overflow-hidden bg-[#080a0c] video-player-container">
         <video
           ref={videoRef0}
           src={VIDEO_URL}
+          aria-hidden="true"
           muted
           playsInline
           autoPlay
@@ -61,6 +62,8 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
         <video
           ref={videoRef1}
           src={VIDEO_URL}
+          preload="none"
+          aria-hidden="true"
           muted
           playsInline
           onTimeUpdate={() => activeVideo === 1 && handleTimeUpdate(1)}
@@ -78,37 +81,35 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
       />
 
       {/* ── NAV (z-10) ── */}
-      <header className="relative z-10 max-w-7xl mx-auto px-8 py-7 flex items-center justify-between">
-        <span className="text-[26px] leading-none tracking-tight text-white font-display">
+      <header className="relative z-10 max-w-7xl mx-auto px-5 sm:px-8 py-6 sm:py-7 flex items-center justify-between gap-4">
+        <span className="text-[22px] sm:text-[26px] leading-none tracking-tight text-white font-display">
           Lead-Scrapper
         </span>
 
         <nav className="hidden md:flex items-center gap-8">
           {['Leads', 'Inbox', 'Analytics'].map((link) => (
-            <button
+            <a
               key={link}
-              type="button"
-              onClick={onEnterApp}
-              className="text-[13px] text-white/80 hover:text-white font-medium transition-colors duration-200 cursor-pointer"
+              href={`#${link.toLowerCase()}`}
+              className="text-[13px] text-white/80 hover:text-white font-medium transition-colors duration-200"
             >
               {link}
-            </button>
+            </a>
           ))}
         </nav>
 
         <div className="flex items-center gap-3">
-          {onEnterApp && (
-            <button
-              onClick={onEnterApp}
-              className="text-[13px] text-white/90 hover:text-white px-4 py-2 rounded-full border border-white/30 hover:border-white/60 transition-all font-medium cursor-pointer"
-            >
-              Get started
-            </button>
-          )}
           <button
             type="button"
             onClick={onEnterApp}
-            className="bg-[#F0501E] hover:bg-[#F0501E]/90 text-white text-[13px] font-semibold px-5 py-2 rounded-full shadow-md transition-all cursor-pointer"
+            className="hidden sm:inline-flex text-[13px] text-white/90 hover:text-white px-4 py-2 rounded-full border border-white/30 hover:border-white/60 transition-all font-medium cursor-pointer"
+          >
+            Get started
+          </button>
+          <button
+            type="button"
+            onClick={onEnterApp}
+            className="bg-[#D44314] hover:bg-[#B93A0E] text-white text-[13px] font-semibold px-4 sm:px-5 py-2 rounded-full shadow-md transition-all cursor-pointer whitespace-nowrap"
           >
             Open dashboard
           </button>
@@ -116,7 +117,7 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
       </header>
 
       {/* ── HERO CONTENT (bottom-anchored) ── */}
-      <main className="relative z-10 max-w-7xl mx-auto px-8 pb-20 min-h-[calc(100svh-104px)] flex flex-col justify-end">
+      <main className="relative z-10 max-w-7xl mx-auto px-5 sm:px-8 pb-20 min-h-[calc(100svh-104px)] flex flex-col justify-end">
         <div className="[animation-fill-mode:both] animate-fade-rise text-[11px] font-mono text-[#F0501E] font-bold uppercase tracking-widest mb-2" style={{ opacity: 0 }}>
           WhatsApp outreach, on autopilot
         </div>
@@ -136,7 +137,7 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
           <button
             type="button"
             onClick={onEnterApp}
-            className="rounded-full bg-[#F0501E] hover:bg-[#F0501E]/90 text-white px-7 py-3.5 text-[13px] font-semibold shadow-lg shadow-[#F0501E]/20 transition-all cursor-pointer"
+            className="rounded-full bg-[#D44314] hover:bg-[#B93A0E] text-white px-7 py-3.5 text-[13px] font-semibold shadow-lg shadow-[#F0501E]/20 transition-all cursor-pointer"
           >
             Open dashboard
           </button>
@@ -152,7 +153,7 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
       </main>
 
       {/* ── FOOTER (pinned to hero bottom) ── */}
-      <footer className="pointer-events-none absolute bottom-0 inset-x-0 z-10 max-w-7xl mx-auto px-8 pb-8">
+      <footer className="pointer-events-none absolute bottom-0 inset-x-0 z-10 max-w-7xl mx-auto px-5 sm:px-8 pb-8">
         <div className="flex items-center justify-between border-t border-white/20 pt-5 text-[11px] font-mono uppercase tracking-[0.3em] text-white/70">
           <span>AI-powered</span>
           <span className="hidden sm:block">WhatsApp outreach</span>
