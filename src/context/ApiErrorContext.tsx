@@ -11,9 +11,14 @@ const ApiErrorContext = createContext<ApiErrorContextType | undefined>(undefined
 
 const LAST_SYNC_KEY = 'lead_scrapper_last_sync';
 
-/** True only for network-level failures and 5xx responses — never for 4xx/RLS/validation errors. */
+/**
+ * True only for network-level failures and 5xx responses — never for 4xx/RLS/validation errors.
+ * n8n webhook failures are excluded: an unreachable automation service is reported inline
+ * by the feature that called it, and must not lock the whole CRM behind the takeover.
+ */
 function isServerFailure(error: unknown): boolean {
   if (!error) return false;
+  if ((error as { name?: unknown }).name === 'WebhookError') return false;
   const e = error as { message?: unknown; status?: unknown; code?: unknown; statusCode?: unknown };
   const message = String(e.message ?? error).toLowerCase();
   const status = Number(e.status ?? e.statusCode ?? e.code);

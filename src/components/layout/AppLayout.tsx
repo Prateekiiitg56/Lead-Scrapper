@@ -15,6 +15,7 @@ import { timeAgo } from '@/lib/utils';
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/leads', label: 'Leads' },
+  { to: '/job-signals', label: 'Job Signals' },
   { to: '/inbox', label: 'Inbox' },
   { to: '/search', label: 'Search' },
   { to: '/analytics', label: 'Analytics' },

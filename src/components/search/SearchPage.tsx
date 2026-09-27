@@ -22,6 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLeads } from '@/hooks/useLeads';
 import { isOutreachAuthorized } from '@/services/permissionService';
 import { OutreachModal } from '@/components/common/OutreachModal';
+import { LinkedInLogo } from '@/components/common/LinkedInLogo';
 import { OutreachPermissionModal } from '@/components/common/OutreachPermissionModal';
 import type { SearchLead } from '@/types/api';
 import type { Lead } from '@/types/database';
@@ -50,14 +51,6 @@ function GmailLogo({ className = 'w-4 h-4' }: { className?: string }) {
       <path fill="#EA4335" d="M18 4.5h2.5c.83 0 1.5.67 1.5 1.5v.5L12 14 2 6.5V6c0-.83.67-1.5 1.5-1.5H6l6 4.5 6-4.5z" />
       <path fill="#FBBC04" d="M2 8.5V18c0 .83.67 1.5 1.5 1.5H6v-8l-4-3z" />
       <path fill="#4285F4" d="M18 11.5v8h2.5c.83 0 1.5-.67 1.5-1.5V8.5l-4 3z" />
-    </svg>
-  );
-}
-
-function LinkedInLogo({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
     </svg>
   );
 }

@@ -12,6 +12,8 @@ const WEBHOOKS = {
   send: import.meta.env.VITE_N8N_SEND_URL || '',
   stats: import.meta.env.VITE_N8N_STATS_URL || '',
   email: import.meta.env.VITE_N8N_EMAIL_URL || '',
+  jobs: import.meta.env.VITE_N8N_JOBS_URL || '',
+  people: import.meta.env.VITE_N8N_PEOPLE_URL || '',
 };
 
 /** Google Places + detail lookups + website scraping in n8n routinely take 30–60s. */
@@ -36,7 +38,9 @@ export class PermissionError extends Error {
   }
 }
 
-async function callWebhook(
+const NGROK_HOST = /^https?:\/\/[^/]*\.ngrok(-free)?\.(app|dev|io)(:\d+)?\//i;
+
+export async function callWebhook(
   name: keyof typeof WEBHOOKS,
   init: { method: 'GET' | 'POST'; body?: unknown },
   timeoutMs: number
@@ -44,13 +48,18 @@ async function callWebhook(
   const url = WEBHOOKS[name];
   if (!url) throw new WebhookError('config', `The ${name} webhook is not configured (VITE_N8N_${name.toUpperCase()}_URL).`);
 
+  const headers: Record<string, string> = {};
+  if (init.body) headers['Content-Type'] = 'application/json';
+  // ngrok's free tunnels answer browsers with an HTML warning page (no CORS headers) unless told to skip it.
+  if (NGROK_HOST.test(url)) headers['ngrok-skip-browser-warning'] = 'true';
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(url, {
       method: init.method,
-      headers: init.body ? { 'Content-Type': 'application/json' } : undefined,
+      headers,
       body: init.body ? JSON.stringify(init.body) : undefined,
       signal: controller.signal,
     });
@@ -83,7 +92,7 @@ async function callWebhook(
   return json;
 }
 
-function asString(v: unknown): string {
+export function asString(v: unknown): string {
   return typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '';
 }
 

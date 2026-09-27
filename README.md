@@ -71,6 +71,7 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | `VITE_N8N_SEND_URL` | n8n `unbias-send-message` webhook (WhatsApp templates) |
 | `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
 | `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
+| `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
 | `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary) |
 
 ### Step 3: Database
@@ -79,6 +80,7 @@ Run in the Supabase SQL editor, in order:
 2. `supabase/migrations/002_email_linkedin_channels.sql` — **required** for email outreach and for saving email-only leads. Without it the app still saves phone leads but shows an explicit "missing email/LinkedIn columns" error for email paths.
 3. `supabase/fix_rls_policies.sql` — per-user ownership (`leads.assigned_user_id = auth.uid()`).
 4. `supabase/migrations/003_harden_users_rls.sql` — removes the permissive `users`/`followups`/`templates`/`analytics` policies from 001.
+5. `supabase/migrations/004_job_signals.sql` — Job Signals tables (`companies`, `job_openings`, `people`, `job_people`, `signals`), each owned per user through RLS. The rest of the app works without it; the Job Signals page shows a "missing Job Signals tables" error until it is applied.
 
 ### Step 4: Edge Functions (server-side secrets)
 Inbox WhatsApp replies and AI email drafting call Meta and Gemini with secret keys, so they run as Supabase Edge Functions instead of in the browser:
@@ -230,6 +232,48 @@ Response: `{ "success": true, "message": "sent" }`, or HTTP 400 `{ "success": fa
 
 ### Stats — `GET VITE_N8N_STATS_URL`
 Response: `{ "success": true, "sent_this_month": 7, "total_logged": 42 }` (counted from the Google Sheet).
+
+### Job search — `POST VITE_N8N_JOBS_URL`
+```json
+{ "query": "CRM automation jobs in Germany", "keywords": "CRM automation", "location": "Germany", "user_id": "<auth uid>", "user_email": "<login email>" }
+```
+Response: `{ "success": true, "jobs": [ { "id", "title", "company": { "name", "location" }, "location", "description", "url", "posted_at", "source" } ], "dropped": { "agency": 2, "scam": 1, ... }, "warnings": [] }` (a bare array also works; `company` may also be a plain name). `posted_at` accepts ISO dates or text like `"3 days ago"`. The client scores each opening HIGH / MEDIUM / LOW by keyword matches (`src/lib/signalScoring.ts`; title hits count double) and stores companies, openings and signals in Supabase.
+
+### People lookup — `POST VITE_N8N_PEOPLE_URL`
+```json
+{ "company": "Acme GmbH", "website": "", "linkedin_url": "", "location": "Berlin, Germany", "roles": ["Founder/CEO", "COO"] }
+```
+Response: `{ "success": true, "people": [ { "name", "title", "role", "linkedin_url", "email", "source", "source_url" } ], "company": { "website", "email", "emails" }, "warnings": [] }`. Called only when the user presses Search in the Find People dialog. People are stored only when the user presses Save or Mark as contacted; a company website/email found is saved on the company (blank fields only). Contacted people move to the Contacted page (`/job-signals/contacted`); later lookups at the same company still list them, flagged "Already contacted".
+
+### Job Signals workflow setup
+`Unbias.xai - Job Signals.json` implements both webhooks.
+
+**Jobs** — the `Plan Job Sources` node picks sources from the typed location (country, big city, or region such as "Europe", "Asia", "Africa", "Middle East", "worldwide"):
+
+| Source | Coverage | Cost |
+|---|---|---|
+| [Adzuna](https://developer.adzuna.com) | US, CA, MX, BR, UK, DE, FR, NL, BE, AT, CH, ES, IT, PL, AU, NZ, IN, SG, ZA | Free key, 25 calls/min, 250/day |
+| [hh.ru](https://api.hh.ru) | Russia, Kazakhstan, Belarus, Uzbekistan | Free, no key |
+| [Jooble](https://jooble.org/api/about) | 60+ other countries (rest of Asia, Middle East, Africa, Europe) | Free key on request, small total quota |
+| Google Jobs via [SerpApi](https://serpapi.com) | Worldwide | Optional, paid beyond free tier (off by default) |
+
+`Rank Jobs` then keeps only legit, relevant postings: drops staffing/recruitment agencies, common scam patterns (upfront fees, Telegram/WhatsApp-only hiring, pay promises), postings that do not mention the search terms, postings older than 30 days, and duplicates across sources. Newest first, max 60. Adzuna and Jooble return description snippets, so signal scores lean on job titles.
+
+**People** — merged from, in order of use:
+1. **Company website** (all countries, free): the site from the job source, else domains guessed from the name and country (`.de`, `.com.au`, `.co.jp`, …) and verified by the homepage mentioning the company. Reads team, about, leadership, contact and legal/imprint pages: schema.org `Person` data, team cards, "Name, Title" lines and imprint lines such as `Geschäftsführer: Max Müller`. Emails from `mailto:`, plain text, `[at]`/`[dot]` obfuscation and Cloudflare-protected addresses, kept only on the company's own domain; a personal address is matched to a person by name, a general one (info@, hello@, …) becomes the company email.
+2. **Companies House** (UK only, free key): current directors of an exact company-name match.
+3. **LinkedIn via Google** (SerpApi, optional): `USE_LINKEDIN_SEARCH` in `Build People Query`, off by default.
+
+Setup:
+1. In n8n: **Workflows → Import from File** → `Unbias.xai - Job Signals.json`.
+2. Edit **Plan Job Sources** settings: `jooble_api_key` (optional), `use_serpapi`, `default_countries`. hh.ru requires a contact email on each request; the workflow uses the signed-in user's login email, which the app sends as `user_email`.
+3. Credentials:
+   - **Adzuna** — type **Custom Auth**, JSON `{ "qs": { "app_id": "<id>", "app_key": "<key>" } }`, on `Adzuna Job Search`.
+   - **Companies House** (optional, UK) — type **Basic Auth**, user = API key from developer.company-information.service.gov.uk, empty password, on both `Companies House` nodes.
+   - **SerpApi** (optional) — type **Query Auth**, name `api_key`, on `Google Jobs Search` and `SerpApi LinkedIn Profiles`.
+4. Activate and copy the production URLs of `Job Search Webhook` and `People Webhook` into `VITE_N8N_JOBS_URL` and `VITE_N8N_PEOPLE_URL`.
+
+A source with no credential or no coverage is skipped; its reason appears in `warnings`, which the app shows under the results.
 
 > The n8n WhatsApp workflow also upserts leads with the service-role key but does not set `assigned_user_id`. Those rows are invisible to users under RLS; the app therefore records its own CRM row per user. `user_id` is now sent so the workflow can set ownership if you update it.
 

@@ -15,6 +15,8 @@ const TermsPage = lazy(() => import('@/components/legal/TermsPage').then((m) => 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((m) => ({ default: m.AppLayout })));
 const DashboardPage = lazy(() => import('@/components/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const LeadsPage = lazy(() => import('@/components/leads/LeadsPage').then((m) => ({ default: m.LeadsPage })));
+const JobSignalsPage = lazy(() => import('@/components/jobs/JobSignalsPage').then((m) => ({ default: m.JobSignalsPage })));
+const ContactedPage = lazy(() => import('@/components/jobs/ContactedPage').then((m) => ({ default: m.ContactedPage })));
 const InboxPage = lazy(() => import('@/components/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
 const SearchPage = lazy(() => import('@/components/search/SearchPage').then((m) => ({ default: m.SearchPage })));
 const AnalyticsPage = lazy(() => import('@/components/analytics/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })));
@@ -68,6 +70,8 @@ export default function App() {
                 >
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/leads" element={<LeadsPage />} />
+                  <Route path="/job-signals" element={<JobSignalsPage />} />
+                  <Route path="/job-signals/contacted" element={<ContactedPage />} />
                   <Route path="/inbox" element={<InboxPage />} />
                   <Route path="/search" element={<SearchPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
