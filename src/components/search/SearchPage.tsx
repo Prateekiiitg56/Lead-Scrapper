@@ -6,7 +6,6 @@ import {
   sendWhatsAppTemplate,
   sendColdEmail,
   generateAIEmail,
-  fetchStats,
   isValidEmail,
   PermissionError,
   type OutreachResult,
@@ -14,6 +13,7 @@ import {
   type WhatsAppTemplate,
 } from '@/services/searchService';
 import { normalizePhone, normalizeEmail, saveLeadForUser } from '@/services/leadService';
+import { fetchOutreachStats } from '@/services/conversationService';
 import { BUSINESS_TYPES, EMAIL_TEMPLATES, STATUS_LABELS, type EmailTemplateId } from '@/lib/constants';
 import { queryKeys } from '@/lib/queryClient';
 import { errorMessage, timeAgo, toExternalUrl } from '@/lib/utils';
@@ -482,7 +482,11 @@ export function SearchPage() {
 
   const effectiveType = businessType === 'Other' ? businessTypeOther.trim() : businessType;
 
-  const statsQuery = useQuery({ queryKey: queryKeys.searchStats, queryFn: fetchStats, retry: false });
+  const statsQuery = useQuery({
+    queryKey: queryKeys.searchStats(user?.id),
+    queryFn: () => fetchOutreachStats(user!.id),
+    enabled: !!user?.id,
+  });
   const countSent = useCountUp(statsQuery.data?.sent_this_month ?? 0);
   const countTotal = useCountUp(statsQuery.data?.total_logged ?? 0);
 
@@ -551,7 +555,7 @@ export function SearchPage() {
     setActive(null);
     setContacted((prev) => ({ ...prev, [leadKey(lead)]: { ...prev[leadKey(lead)], [channel]: true } }));
     queryClient.invalidateQueries({ queryKey: queryKeys.leads(user?.id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.searchStats });
+    queryClient.invalidateQueries({ queryKey: queryKeys.searchStats(user?.id) });
     setNotice(
       result.crmError
         ? { tone: 'warning', text: `${channel === 'whatsapp' ? 'WhatsApp message' : 'Email'} sent to ${lead.name}, but the CRM was not updated: ${result.crmError}` }
@@ -571,7 +575,15 @@ export function SearchPage() {
     setActive({ lead, channel });
   };
 
-  const results = search.data?.leads ?? null;
+  // Hide businesses this user already contacted (from their own CRM). Leads sent to in this
+  // session stay visible so the "sent" check remains on screen.
+  const wasContacted = (lead: SearchLead) => {
+    const crm = findCrmLead(lead);
+    return !!crm && (crm.status !== 'NEW' || !!crm.last_contact_at) && !contacted[leadKey(lead)];
+  };
+  const allResults = search.data?.leads ?? null;
+  const results = allResults?.filter((l) => !wasContacted(l)) ?? null;
+  const alreadyContacted = (allResults?.length ?? 0) - (results?.length ?? 0);
   const noWebsite = results?.filter((l) => !l.has_website).length ?? 0;
   const withWebsite = (results?.length ?? 0) - noWebsite;
   const displayLeads = (results ?? []).filter((l) => (filterChip === 'no_website' ? !l.has_website : filterChip === 'has_website' ? l.has_website : true));
@@ -686,15 +698,16 @@ export function SearchPage() {
                     <h2 className="text-[15px] font-bold text-[#14161A]" aria-live="polite">
                       {results.length} {results.length === 1 ? 'lead' : 'leads'} found
                     </h2>
-                    {(search.data!.duplicates > 0 || search.data!.invalid > 0) && (
+                    {(search.data!.duplicates > 0 || search.data!.invalid > 0 || alreadyContacted > 0) && (
                       <p className="text-[12px] text-[#4B5264]">
+                        {alreadyContacted > 0 && `${alreadyContacted} already contacted from your CRM hidden. `}
                         {search.data!.duplicates > 0 && `${search.data!.duplicates} duplicate${search.data!.duplicates > 1 ? 's' : ''} removed. `}
                         {search.data!.invalid > 0 && `${search.data!.invalid} incomplete result${search.data!.invalid > 1 ? 's' : ''} skipped.`}
                       </p>
                     )}
                     {search.data!.cachedAt && (
                       <p className="text-[12px] text-[#4B5264]">
-                        Cached Google Places results, fetched {timeAgo(search.data!.cachedAt).toLowerCase()}. Already-contacted businesses are still filtered out.
+                        Cached Google Places results, fetched {timeAgo(search.data!.cachedAt).toLowerCase()}.
                       </p>
                     )}
                   </div>
@@ -725,7 +738,7 @@ export function SearchPage() {
                   <div className="bg-white border border-[#d1d5db] rounded-[24px] p-10 text-center space-y-2">
                     <p className="text-[15px] font-bold text-[#14161A]">No new leads for “{lastQuery?.type}” in {lastQuery?.location}</p>
                     <p className="text-[13px] text-[#4B5264] max-w-md mx-auto">
-                      The workflow skips businesses without a phone number and ones already contacted. Try a nearby city, a broader category, or check the spelling of the location.
+                      Businesses without a phone number, and ones you already contacted, are not shown. Try a nearby city, a broader category, or check the spelling of the location.
                     </p>
                   </div>
                 ) : displayLeads.length === 0 ? (

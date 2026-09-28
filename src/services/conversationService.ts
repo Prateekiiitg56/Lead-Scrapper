@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Conversation } from '@/types/database';
+import type { OutreachStats } from '@/types/api';
 import type { LeadStatus } from '@/lib/constants';
 
 export interface InboxLead {
@@ -128,6 +129,22 @@ export async function fetchNotifications(userId: string): Promise<NotificationIt
     })),
   ];
   return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 6);
+}
+
+/** The user's own outreach counters: outbound messages on leads assigned to them (all channels). */
+export async function fetchOutreachStats(userId: string): Promise<OutreachStats> {
+  const outbound = () =>
+    supabase
+      .from('conversations')
+      .select('id, leads!inner(assigned_user_id)', { count: 'exact', head: true })
+      .eq('leads.assigned_user_id', userId)
+      .eq('direction', 'OUTBOUND');
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const [month, total] = await Promise.all([outbound().gte('timestamp', monthStart), outbound()]);
+  if (month.error) throw month.error;
+  if (total.error) throw total.error;
+  return { sent_this_month: month.count ?? 0, total_logged: total.count ?? 0 };
 }
 
 export async function fetchOutboundCount(userId: string): Promise<number> {

@@ -580,7 +580,7 @@
           "operation": "append",
           "documentId": {
             "__rl": true,
-            "value": "YOUR_GOOGLE_SHEET_ID",
+            "value": "1pBgW69ASteOf8m1mdTZMUEtDEguXE-EB6ujEpBXQ2Ek",
             "mode": "id"
           },
           "sheetName": {
@@ -716,7 +716,7 @@
         "parameters": {
           "documentId": {
             "__rl": true,
-            "value": "YOUR_GOOGLE_SHEET_ID",
+            "value": "1pBgW69ASteOf8m1mdTZMUEtDEguXE-EB6ujEpBXQ2Ek",
             "mode": "id"
           },
           "sheetName": {
@@ -840,37 +840,7 @@
       },
       {
         "parameters": {
-          "documentId": {
-            "__rl": true,
-            "value": "YOUR_GOOGLE_SHEET_ID",
-            "mode": "id"
-          },
-          "sheetName": {
-            "__rl": true,
-            "value": "Leads",
-            "mode": "name"
-          },
-          "options": {}
-        },
-        "id": "971a54c1-abb7-45c0-9b53-cee04572ca01",
-        "name": "Get Contacted Phones",
-        "type": "n8n-nodes-base.googleSheets",
-        "typeVersion": 4.5,
-        "position": [
-          640,
-          160
-        ],
-        "alwaysOutputData": true,
-        "credentials": {
-          "googleSheetsOAuth2Api": {
-            "id": "WTiUWTnguvHq2SFe",
-            "name": "Google Sheets account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "jsCode": "const plan = $('Plan Places Search').first().json;\nlet preppedLeads;\nif (plan.cached_leads) {\n  preppedLeads = plan.cached_leads;\n} else {\n  // Fresh Places results: count the Place Details calls and cache the results for Plan Places Search.\n  preppedLeads = $('Aggregate Prepped Leads').first().json.prepped_leads || [];\n  // Daily third-party call counter, reported by the API Usage webhook. Resets at 00:00 UTC.\n  const countCalls = (calls) => {\n    const data = $getWorkflowStaticData('global');\n    const day = new Date().toISOString().slice(0, 10);\n    if (!data.usage || data.usage.day !== day) data.usage = { day, calls: {} };\n    for (const [source, n] of Object.entries(calls)) if (n) data.usage.calls[source] = (data.usage.calls[source] || 0) + n;\n  };\n  countCalls({ 'Google Places': $('Place Details').all().length });\n  const data = $getWorkflowStaticData('global');\n  data.places = data.places || {};\n  data.places[plan.cache_key] = { at: Date.now(), leads: preppedLeads };\n  const keys = Object.keys(data.places).sort((a, b) => data.places[a].at - data.places[b].at);\n  for (const key of keys.slice(0, Math.max(0, keys.length - plan.cache_entries))) delete data.places[key];\n}\n\n// Every row currently in the Leads sheet (this node's own input)\nconst contactedRows = $input.all();\nconst contactedPhones = new Set(\n  contactedRows\n    .map(item => (item.json.phone || '').toString().trim())\n    .filter(p => p.length > 0)\n);\n\n// Keep only leads that have a phone and are NOT already in the sheet\nconst newLeads = preppedLeads.filter(lead => {\n  const phone = (lead.lead_phone || '').toString().trim();\n  return phone.length > 0 && !contactedPhones.has(phone);\n});\n\nreturn newLeads.map(lead => ({ json: lead }));"
+          "jsCode": "const plan = $('Plan Places Search').first().json;\nlet preppedLeads;\nif (plan.cached_leads) {\n  preppedLeads = plan.cached_leads;\n} else {\n  // Fresh Places results: count the Place Details calls and cache the results for Plan Places Search.\n  preppedLeads = $('Aggregate Prepped Leads').first().json.prepped_leads || [];\n  // Daily third-party call counter, reported by the API Usage webhook. Resets at 00:00 UTC.\n  const countCalls = (calls) => {\n    const data = $getWorkflowStaticData('global');\n    const day = new Date().toISOString().slice(0, 10);\n    if (!data.usage || data.usage.day !== day) data.usage = { day, calls: {} };\n    for (const [source, n] of Object.entries(calls)) if (n) data.usage.calls[source] = (data.usage.calls[source] || 0) + n;\n  };\n  countCalls({ 'Google Places': $('Place Details').all().length });\n  const data = $getWorkflowStaticData('global');\n  data.places = data.places || {};\n  data.places[plan.cache_key] = { at: Date.now(), leads: preppedLeads };\n  const keys = Object.keys(data.places).sort((a, b) => data.places[a].at - data.places[b].at);\n  for (const key of keys.slice(0, Math.max(0, keys.length - plan.cache_entries))) delete data.places[key];\n}\n\n// Keep leads that have a phone. Already-contacted leads are hidden by the frontend,\n// per user, from that user's own Supabase CRM (not from the shared sheet).\nconst newLeads = preppedLeads.filter(lead => (lead.lead_phone || '').toString().trim().length > 0);\n\nreturn newLeads.map(lead => ({ json: lead }));"
         },
         "id": "09f1c3c1-deb6-413c-8748-79ff32cfa5eb",
         "name": "Filter New Leads",
@@ -1316,17 +1286,6 @@
         "main": [
           [
             {
-              "node": "Get Contacted Phones",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Get Contacted Phones": {
-        "main": [
-          [
-            {
               "node": "Filter New Leads",
               "type": "main",
               "index": 0
@@ -1389,7 +1348,7 @@
         "main": [
           [
             {
-              "node": "Get Contacted Phones",
+              "node": "Filter New Leads",
               "type": "main",
               "index": 0
             }

@@ -70,7 +70,6 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | `VITE_N8N_SEARCH_URL` | n8n `unbias-lead-search` webhook |
 | `VITE_N8N_SEND_URL` | n8n `unbias-send-message` webhook (WhatsApp templates) |
 | `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
-| `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
 | `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
 | `VITE_N8N_USAGE_URL`, `VITE_N8N_LEAD_USAGE_URL` | n8n `unbias-api-usage` (Job Signals) and `unbias-lead-api-usage` (Lead Gen) webhooks: today's third-party API calls for the header gauge |
 | `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary). Unset = nobody can send |
@@ -217,10 +216,10 @@ Verified against the exported workflows in this repo.
 { "business_type": "Restaurant", "business_type_other": "", "location": "Guwahati, Assam" }
 ```
 Response (`Respond With Leads`): `{ "success": true, "count": 2, "leads": [ { "name", "phone", "address", "rating", "has_website": "true"|"false", "website", "email", "linkedin_url" } ], "cached_at": null }`.
-The workflow drops places without a phone and phones already in the Google Sheet log. The client validates the response, removes duplicates (place id / phone), skips rows without a name, and times out after 120 s.
+The workflow drops places without a phone. The client hides businesses the signed-in user already contacted (matched by phone/email against their own Supabase leads), validates the response, removes duplicates (place id / phone), skips rows without a name, and times out after 120 s.
 
 `Plan Places Search` caches and rate-limits Google Places (settings at the top of the node):
-- **Cache**: the same business type + location within `cache_minutes` (default 24 hours, max `cache_entries` = 50) reuses the stored Places results instead of calling Google. The "already contacted" filter still runs on every search. `cached_at` says when the results were fetched; the Search page shows it.
+- **Cache**: the same business type + location within `cache_minutes` (default 24 hours, max `cache_entries` = 50) reuses the stored Places results instead of calling Google. The per-user "already contacted" filter runs in the client, so cached results stay current. `cached_at` says when the results were fetched; the Search page shows it.
 - **Rate limits**: at most `max_searches_per_minute` (default 5) fresh searches per minute across all users, and `daily_call_limit` (default 1000) Google Places calls per UTC day. A fresh search costs 1 Text Search + 1 Place Details call per result (up to 20). Over a limit, the workflow answers HTTP 429 `{ "success": false, "message": "..." }`; cached searches still work.
 - `GET unbias-lead-api-usage` (`API Usage Webhook`) reports today's Google Places calls for the header gauge. Keep `DAILY_LIMIT` in `Report API Usage` equal to `daily_call_limit`.
 
@@ -237,9 +236,6 @@ Response: `{ "success": true|false, "message": "..." }`. Only `success: true` co
 { "to_email": "...", "from_email": "...", "business_name": "...", "address": "...", "website": "", "template_id": "website_pitch_email", "subject": "", "custom_body": "", "business_type": "", "user_id": "<auth uid>" }
 ```
 Response: `{ "success": true, "message": "sent" }`, or HTTP 400 `{ "success": false, "message": "Email address is required" }`.
-
-### Stats — `GET VITE_N8N_STATS_URL`
-Response: `{ "success": true, "sent_this_month": 7, "total_logged": 42 }` (counted from the Google Sheet).
 
 ### Job search — `POST VITE_N8N_JOBS_URL`
 ```json

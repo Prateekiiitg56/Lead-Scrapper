@@ -3,14 +3,13 @@ import { supabase } from '@/lib/supabase';
 import { errorMessage } from '@/lib/utils';
 import { isOutreachAuthorized } from '@/services/permissionService';
 import { normalizePhone, recordOutreach } from '@/services/leadService';
-import type { ApiUsage, ApiUsageSource, SearchLead, StatsResponse } from '@/types/api';
+import type { ApiUsage, ApiUsageSource, SearchLead } from '@/types/api';
 import type { EmailTemplateId } from '@/lib/constants';
 import type { Lead } from '@/types/database';
 
 const WEBHOOKS = {
   search: import.meta.env.VITE_N8N_SEARCH_URL || '',
   send: import.meta.env.VITE_N8N_SEND_URL || '',
-  stats: import.meta.env.VITE_N8N_STATS_URL || '',
   email: import.meta.env.VITE_N8N_EMAIL_URL || '',
   jobs: import.meta.env.VITE_N8N_JOBS_URL || '',
   people: import.meta.env.VITE_N8N_PEOPLE_URL || '',
@@ -319,17 +318,6 @@ export async function sendInboxReply(leadId: string, text: string): Promise<{ wa
   const { data, error } = await supabase.functions.invoke('whatsapp-send-text', { body: { lead_id: leadId, text } });
   if (error) throw await edgeFunctionError(error, 'WhatsApp reply failed.', 'whatsapp-send-text');
   return { warning: typeof data?.warning === 'string' ? data.warning : null };
-}
-
-/** Outreach counters from the n8n stats webhook (Google Sheets log). */
-export async function fetchStats(): Promise<StatsResponse> {
-  const json = (await callWebhook('stats', { method: 'GET' }, SEND_TIMEOUT_MS)) as Record<string, unknown>;
-  const sent = Number(json.sent_this_month);
-  const total = Number(json.total_logged);
-  if (!Number.isFinite(sent) || !Number.isFinite(total)) {
-    throw new WebhookError('malformed', 'The stats service returned an unexpected response.');
-  }
-  return { success: true, sent_this_month: sent, total_logged: total };
 }
 
 /** One n8n workflow's API usage report. */

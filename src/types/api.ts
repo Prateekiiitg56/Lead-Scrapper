@@ -13,8 +13,7 @@ export interface SearchLead {
   city: string | null;
 }
 
-export interface StatsResponse {
-  success: boolean;
+export interface OutreachStats {
   sent_this_month: number;
   total_logged: number;
 }
