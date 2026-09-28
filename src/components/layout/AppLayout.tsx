@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
-import { Bell, Sparkles, ChevronDown, Layers, Search as SearchIcon, LogOut, MessageSquare, UserPlus, CheckCheck, ChevronRight } from 'lucide-react';
+import { Bell, Sparkles, ChevronDown, Layers, Search as SearchIcon, LogOut, MessageSquare, UserPlus, CheckCheck, ChevronRight, Gauge } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,6 +11,7 @@ import { WelcomeServicesModal } from '@/components/common/WelcomeServicesModal';
 import { JUST_SIGNED_IN_KEY } from '@/context/authState';
 import { fetchNotifications, fetchOutboundCount, markAllInboundRead } from '@/services/conversationService';
 import { timeAgo } from '@/lib/utils';
+import { fetchApiUsage } from '@/services/searchService';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -43,6 +44,109 @@ function usePopover(open: boolean, setOpen: (v: boolean) => void, containerRef: 
       document.removeEventListener('keydown', onKey);
     };
   }, [open, setOpen, containerRef, triggerRef]);
+}
+
+/** Share of a daily limit at which a source is flagged as running low. */
+const USAGE_WARN_RATIO = 0.8;
+
+/** Header gauge: today's calls to each third-party search API against its daily limit. */
+function ApiUsageMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  usePopover(open, setOpen, ref, triggerRef);
+  const location = useLocation();
+
+  useEffect(() => setOpen(false), [location.pathname]);
+
+  const usageQuery = useQuery({ queryKey: queryKeys.apiUsage, queryFn: fetchApiUsage, retry: false, staleTime: 60_000 });
+  const { refetch } = usageQuery;
+  // Searches run elsewhere in the app, so fetch fresh counts every time the menu opens.
+  useEffect(() => {
+    if (open) void refetch();
+  }, [open, refetch]);
+
+  const sources = usageQuery.data?.sources ?? [];
+  const ratio = (s: (typeof sources)[number]) => (s.daily_limit ? s.calls / s.daily_limit : 0);
+  const worst = Math.max(0, ...sources.map(ratio));
+  const status = worst >= 1 ? 'Limit reached' : worst >= USAGE_WARN_RATIO ? 'Near a daily limit' : null;
+  const resetAt = usageQuery.data?.reset_at;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={status ? `API usage today, ${status.toLowerCase()}` : 'API usage today'}
+        title="API usage today"
+        className="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 flex items-center justify-center text-white transition-colors cursor-pointer"
+      >
+        <Gauge className="w-4 h-4" aria-hidden="true" />
+        {status && (
+          <span
+            className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full border-2 border-[#17192B] ${worst >= 1 ? 'bg-red-500' : 'bg-amber-400'}`}
+            aria-hidden="true"
+          />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-2rem))] bg-[#e8eaf0] border border-[#d1d5db] rounded-[24px] p-4 z-50 animate-fade-in shadow-2xl space-y-3 text-[#14161A]">
+          <div className="flex items-center justify-between gap-2 px-1 border-b border-[#d1d5db] pb-3">
+            <div className="flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-[#B93A0E]" aria-hidden="true" />
+              <h2 className="text-[14px] font-bold">API usage today</h2>
+            </div>
+            {resetAt && (
+              <span className="text-[10px] text-[#4B5264] font-mono">
+                Resets {new Date(resetAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+
+          {usageQuery.isPending ? (
+            <div className="skeleton h-24" aria-label="Loading API usage" />
+          ) : usageQuery.isError ? (
+            <p role="alert" className="text-[12px] text-red-700 font-medium px-1">{usageQuery.error.message}</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {sources.map((s) => {
+                const r = ratio(s);
+                const tone = r >= 1 ? 'bg-red-600' : r >= USAGE_WARN_RATIO ? 'bg-amber-500' : 'bg-emerald-600';
+                return (
+                  <li key={s.name} className="bg-white rounded-[16px] p-3 border border-[#d1d5db] space-y-1.5" title={s.note || undefined}>
+                    <div className="flex items-center justify-between gap-2 text-[12px]">
+                      <span className="font-bold">{s.name}</span>
+                      <span className="font-mono font-bold text-[#374151]">
+                        {s.calls}
+                        {s.daily_limit ? ` / ${s.daily_limit}` : ' calls'}
+                      </span>
+                    </div>
+                    {s.daily_limit && (
+                      <div
+                        role="progressbar"
+                        aria-label={`${s.name} daily limit used`}
+                        aria-valuemin={0}
+                        aria-valuemax={s.daily_limit}
+                        aria-valuenow={Math.min(s.calls, s.daily_limit)}
+                        className="h-1.5 rounded-full bg-[#e5e7eb] overflow-hidden"
+                      >
+                        <div className={`h-full ${tone}`} style={{ width: `${Math.min(100, r * 100)}%` }} />
+                      </div>
+                    )}
+                    {s.note && <p className="text-[10px] text-[#4B5264] font-medium leading-snug">{s.note}</p>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function AppLayout() {
@@ -180,6 +284,8 @@ export function AppLayout() {
                 className="quiet-input !pl-11 !pr-4 font-medium"
               />
             </form>
+
+            <ApiUsageMenu />
 
             <div ref={notifRef} className="relative">
               <button

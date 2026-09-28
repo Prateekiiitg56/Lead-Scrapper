@@ -19,6 +19,7 @@ export const queryKeys = {
   notifications: (userId: string | undefined) => ['notifications', userId] as const,
   outboundCount: (userId: string | undefined) => ['outbound-count', userId] as const,
   searchStats: ['search-stats'] as const,
+  apiUsage: ['api-usage'] as const,
   jobSignals: (userId: string | undefined) => ['job-signals', userId] as const,
   jobSignalStats: (userId: string | undefined) => ['job-signal-stats', userId] as const,
   companyJobs: (companyId: string | null) => ['company-jobs', companyId] as const,

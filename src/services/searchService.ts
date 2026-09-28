@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { errorMessage } from '@/lib/utils';
 import { isOutreachAuthorized } from '@/services/permissionService';
 import { normalizePhone, recordOutreach } from '@/services/leadService';
-import type { SearchLead, StatsResponse } from '@/types/api';
+import type { ApiUsage, ApiUsageSource, SearchLead, StatsResponse } from '@/types/api';
 import type { EmailTemplateId } from '@/lib/constants';
 import type { Lead } from '@/types/database';
 
@@ -14,6 +14,7 @@ const WEBHOOKS = {
   email: import.meta.env.VITE_N8N_EMAIL_URL || '',
   jobs: import.meta.env.VITE_N8N_JOBS_URL || '',
   people: import.meta.env.VITE_N8N_PEOPLE_URL || '',
+  usage: import.meta.env.VITE_N8N_USAGE_URL || '',
 };
 
 /** Google Places + detail lookups + website scraping in n8n routinely take 30–60s. */
@@ -325,4 +326,23 @@ export async function fetchStats(): Promise<StatsResponse> {
     throw new WebhookError('malformed', 'The stats service returned an unexpected response.');
   }
   return { success: true, sent_this_month: sent, total_logged: total };
+}
+
+/** Today's third-party API calls, counted by the Job Signals workflow in n8n. */
+export async function fetchApiUsage(): Promise<ApiUsage> {
+  const json = (await callWebhook('usage', { method: 'GET' }, SEND_TIMEOUT_MS)) as Record<string, unknown>;
+  if (!Array.isArray(json.sources)) {
+    throw new WebhookError('malformed', 'The usage service returned an unexpected response.');
+  }
+  const sources: ApiUsageSource[] = json.sources.map((raw) => {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const limit = Number(r.daily_limit);
+    return {
+      name: asString(r.name),
+      calls: Number(r.calls) || 0,
+      daily_limit: r.daily_limit != null && Number.isFinite(limit) && limit > 0 ? limit : null,
+      note: asString(r.note),
+    };
+  });
+  return { reset_at: asString(json.reset_at) || null, sources: sources.filter((src) => src.name) };
 }

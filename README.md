@@ -72,6 +72,7 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
 | `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
 | `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
+| `VITE_N8N_USAGE_URL` | n8n `unbias-api-usage` webhook (header gauge: today's third-party API calls) |
 | `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary) |
 
 ### Step 3: Database
@@ -276,7 +277,9 @@ Setup:
      `{ "qs": { "app_id": "<id>", "app_key": "<key>" } }`
    - **Companies House** (optional, UK) — type **Basic Auth**, user = API key from developer.company-information.service.gov.uk, empty password, on both `Companies House` nodes.
    - **SerpApi** (optional) — type **Query Auth**, name `api_key`, on `Google Jobs Search` and `SerpApi LinkedIn Profiles`.
-4. Activate and copy the production URLs of `Job Search Webhook` and `People Webhook` into `VITE_N8N_JOBS_URL` and `VITE_N8N_PEOPLE_URL`.
+4. Activate and copy the production URLs of `Job Search Webhook`, `People Webhook` and `API Usage Webhook` into `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` and `VITE_N8N_USAGE_URL`.
+
+**API usage** — the workflow counts its calls to each third-party source per UTC day in static data (production runs only) and `GET unbias-api-usage` returns `{ "success": true, "day", "reset_at", "sources": [ { "name", "calls", "daily_limit", "note" } ] }`. The gauge icon in the app header shows these counts and turns amber at 80% of a daily limit, red at 100%. Set each plan's daily limit in `SOURCES` in the `Report API Usage` node (`null` = no daily cap).
 
 A source with no credential or no coverage is skipped; its reason appears in `warnings`, which the app shows under the results.
 

@@ -18,3 +18,17 @@ export interface StatsResponse {
   sent_this_month: number;
   total_logged: number;
 }
+
+export interface ApiUsageSource {
+  name: string;
+  calls: number;
+  /** null when the source has no daily cap; `note` then describes its real limit. */
+  daily_limit: number | null;
+  note: string;
+}
+
+/** Third-party API calls made today (UTC), from the n8n usage webhook. */
+export interface ApiUsage {
+  reset_at: string | null;
+  sources: ApiUsageSource[];
+}
