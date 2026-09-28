@@ -10,7 +10,7 @@ const MAX_RETRIES = 3;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503]);
 
 async function generate(prompt: string, maxOutputTokens: number): Promise<string> {
-  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
+  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const payload = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
