@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { AuthContext, JUST_SIGNED_IN_KEY, type AuthContextValue } from '@/context/authState';
 import { queryKeys } from '@/lib/queryClient';
-import { GMAIL_OAUTH_OPTIONS, saveGmailGrant } from '@/services/gmailService';
+import { saveGmailGrant } from '@/services/gmailService';
 
 function markFreshSignIn(on: boolean) {
   try {
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
       // Never let one account's cached CRM data survive into another session.
       if (event === 'SIGNED_OUT') queryClient.clear();
-      // Google returns a refresh token after sign-in or "Connect Gmail". Store it server-side once,
+      // Google returns a refresh token after "Connect Gmail". Store it server-side once,
       // outside this callback (supabase-js deadlocks on auth calls made inside it).
       const grant = next?.provider_refresh_token;
       if (grant && savedGrant.current !== grant) {
@@ -84,8 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     markFreshSignIn(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      // Ask for Gmail sending up front so cold emails go out from this account.
-      options: { ...GMAIL_OAUTH_OPTIONS, redirectTo: `${window.location.origin}/dashboard` },
+      // Basic sign-in only. Gmail sending is requested later by "Connect Gmail", so login keeps
+      // working for accounts Google has not approved for the sensitive gmail.send scope.
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
     if (error) markFreshSignIn(false);
     return error;

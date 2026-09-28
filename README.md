@@ -127,7 +127,7 @@ The old `Unbias.xai - Cold Email Outreach` workflow is no longer called (email n
 Cold emails go out from the signed-in user's own Gmail account, never a shared one:
 1. Google Cloud Console → the OAuth client used by Supabase Auth → **OAuth consent screen**: add the scope `https://www.googleapis.com/auth/gmail.send`. It is a sensitive scope: in **Testing** mode add each user as a test user. For public use, submit the app for Google verification.
 2. Supabase → Authentication → Providers → Google must use that client. Enable **Manual linking** (Authentication → Settings) so email/password users can link Google.
-3. "Sign in with Google" now asks for Gmail send permission. The app stores the refresh token (encrypted) through the `gmail` function. Email/password users press **Connect Gmail** in the Email dialog.
+3. "Sign in with Google" asks only for basic sign-in, so login works for every Google account. Gmail permission is requested when the user presses **Connect Gmail** in the Email dialog (once per account, for Google and email/password users alike). The app stores the refresh token (encrypted) through the `gmail` function. Admins connect the same way.
 4. The connected Google account must be the same address the user signs in with. A different account is refused.
 
 **Rotate** any Meta token or Gemini key that was previously in `VITE_META_ACCESS_TOKEN` / `VITE_GEMINI_API_KEY`: earlier builds embedded them in public JavaScript.
