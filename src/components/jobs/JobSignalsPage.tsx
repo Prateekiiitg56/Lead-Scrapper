@@ -134,6 +134,8 @@ export function JobSignalsPage() {
   const queryClient = useQueryClient();
   const formId = useId();
   const [query, setQuery] = useState('');
+  // Remote-first: companies hiring remote automation roles are the main lead signal.
+  const [remoteOnly, setRemoteOnly] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState('');
   const [elapsed, setElapsed] = useState(0);
@@ -151,8 +153,8 @@ export function JobSignalsPage() {
     enabled: !!userId,
   });
 
-  const search = useMutation<JobSearchResult, Error, string>({
-    mutationFn: (q) => searchJobSignals(user!, q),
+  const search = useMutation<JobSearchResult, Error, { q: string; remote: boolean }>({
+    mutationFn: ({ q, remote }) => searchJobSignals(user!, q, { remote }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.jobSignals(userId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.jobSignalStats(userId) });
@@ -170,10 +172,10 @@ export function JobSignalsPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = query.trim();
-    if (q.length < 3) return setFormError('Describe the jobs to look for, e.g. "CRM automation jobs in UK".');
+    if (q.length < 3) return setFormError('Describe the jobs to look for, e.g. "automation jobs in USA".');
     setFormError(null);
     setLastQuery(q);
-    search.mutate(q);
+    search.mutate({ q, remote: remoteOnly });
   };
 
   const results = search.data?.jobs;
@@ -215,12 +217,21 @@ export function JobSignalsPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. CRM automation jobs in UK"
+              placeholder="e.g. automation jobs in USA"
               className="quiet-input !pl-11"
               aria-invalid={!!formError}
               aria-describedby={formError ? `${formId}-err` : undefined}
             />
           </div>
+          <label className="flex items-center gap-2 px-3 text-[13px] font-semibold text-[#374151] cursor-pointer select-none whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={remoteOnly}
+              onChange={(e) => setRemoteOnly(e.target.checked)}
+              className="w-4 h-4 accent-[#D44314] cursor-pointer"
+            />
+            Remote only
+          </label>
           <button type="submit" disabled={search.isPending || !userId} className="btn-primary sm:w-48">
             {search.isPending ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Radar className="w-4 h-4" aria-hidden="true" />}
             {search.isPending ? 'Searching…' : 'Find signals'}
@@ -292,7 +303,7 @@ export function JobSignalsPage() {
               <Briefcase className="w-10 h-10 mx-auto text-[#6B7280]" aria-hidden="true" />
               <h2 className="text-lg font-bold text-[#14161A]">Find companies hiring for automation</h2>
               <p className="text-[13px] text-[#4B5264] max-w-md mx-auto">
-                Search job posts like “CRM automation jobs in UK”. Each opening is scored HIGH, MEDIUM or LOW by how many automation and CRM keywords it mentions.
+                Search job posts like “automation jobs in USA”. With Remote only on, you get remote roles open to that country or region. Each opening is scored HIGH, MEDIUM or LOW by how many automation and CRM keywords it mentions.
               </p>
             </div>
           )}

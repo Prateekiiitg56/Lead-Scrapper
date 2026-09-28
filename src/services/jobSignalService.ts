@@ -177,10 +177,14 @@ export interface JobSearchResult {
 }
 
 /** Search jobs through the n8n jobs webhook, score them, and store companies, openings and signals. */
-export async function searchJobSignals(user: { id: string; email?: string | null }, query: string): Promise<JobSearchResult> {
+export async function searchJobSignals(
+  user: { id: string; email?: string | null },
+  query: string,
+  opts: { remote: boolean } = { remote: true }
+): Promise<JobSearchResult> {
   const userId = user.id;
   const { keywords, location } = parseJobQuery(query);
-  const json = await callWebhook('jobs', { method: 'POST', body: { query, keywords, location, user_id: userId, user_email: user.email || '' } }, JOBS_TIMEOUT_MS);
+  const json = await callWebhook('jobs', { method: 'POST', body: { query, keywords, location, remote: opts.remote, user_id: userId, user_email: user.email || '' } }, JOBS_TIMEOUT_MS);
 
   const body = json as { success?: unknown; message?: unknown; jobs?: unknown; dropped?: unknown; warnings?: unknown };
   const rawJobs = Array.isArray(json) ? json : body.jobs;

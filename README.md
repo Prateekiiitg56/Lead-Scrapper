@@ -235,7 +235,7 @@ Response: `{ "success": true, "sent_this_month": 7, "total_logged": 42 }` (count
 
 ### Job search — `POST VITE_N8N_JOBS_URL`
 ```json
-{ "query": "CRM automation jobs in Germany", "keywords": "CRM automation", "location": "Germany", "user_id": "<auth uid>", "user_email": "<login email>" }
+{ "query": "automation jobs in USA", "keywords": "automation", "location": "USA", "remote": true, "user_id": "<auth uid>", "user_email": "<login email>" }
 ```
 Response: `{ "success": true, "jobs": [ { "id", "title", "company": { "name", "location" }, "location", "description", "url", "posted_at", "source" } ], "dropped": { "agency": 2, "scam": 1, ... }, "warnings": [] }` (a bare array also works; `company` may also be a plain name). `posted_at` accepts ISO dates or text like `"3 days ago"`. The client scores each opening HIGH / MEDIUM / LOW by keyword matches (`src/lib/signalScoring.ts`; title hits count double) and stores companies, openings and signals in Supabase.
 
@@ -248,14 +248,18 @@ Response: `{ "success": true, "people": [ { "name", "title", "role", "linkedin_u
 ### Job Signals workflow setup
 `Unbias.xai - Job Signals.json` implements both webhooks.
 
-**Jobs** — the `Plan Job Sources` node picks sources from the typed location (country, big city, or region such as "Europe", "Asia", "Africa", "Middle East", "worldwide"):
+**Jobs** are remote-first. The **Remote only** switch next to the search bar is on by default, and the app sends it as `remote`. The `Plan Job Sources` node picks sources from the typed location (country, big city, or region such as "Europe", "Asia", "Africa", "Middle East", "worldwide"):
 
 | Source | Coverage | Cost |
 |---|---|---|
+| [Jobicy](https://jobicy.com/jobs-rss-feed) | Remote jobs worldwide (remote mode only) | Free, no key; cached 1 hour per query |
+| [Remotive](https://github.com/remotive-com/remote-jobs-api) | Remote jobs worldwide (remote mode only) | Free, no key; cached 6 hours per query (they allow ~4 fetches/day) |
 | [Adzuna](https://developer.adzuna.com) | US, CA, MX, BR, UK, DE, FR, NL, BE, AT, CH, ES, IT, PL, AU, NZ, IN, SG, ZA | Free key, 25 calls/min, 250/day |
 | [hh.ru](https://api.hh.ru) | Russia, Kazakhstan, Belarus, Uzbekistan | Free, no key |
 | [Jooble](https://jooble.org/api/about) | 60+ other countries (rest of Asia, Middle East, Africa, Europe) | Free key on request, small total quota |
 | Google Jobs via [SerpApi](https://serpapi.com) | Worldwide | Optional, paid beyond free tier (off by default) |
+
+In remote mode, Adzuna and Jooble search for "<keywords> remote", hh.ru uses its `schedule=remote` filter, and any posting that does not mention remote work is dropped. Remote-board jobs are kept only when they are open to candidates in the searched country or region (for "USA": USA, North America, Americas or Worldwide). With no location, every remote job counts. Remote-board results are cached in the workflow's static data, which n8n keeps only for production (active) runs; manual test runs always refetch.
 
 `Rank Jobs` then keeps only legit, relevant postings: drops staffing/recruitment agencies, common scam patterns (upfront fees, Telegram/WhatsApp-only hiring, pay promises), postings that do not mention the search terms, postings older than 30 days, and duplicates across sources. Newest first, max 60. Adzuna and Jooble return description snippets, so signal scores lean on job titles.
 
@@ -268,7 +272,8 @@ Setup:
 1. In n8n: **Workflows → Import from File** → `Unbias.xai - Job Signals.json`.
 2. Edit **Plan Job Sources** settings: `jooble_api_key` (optional), `use_serpapi`, `default_countries`. hh.ru requires a contact email on each request; the workflow uses the signed-in user's login email, which the app sends as `user_email`.
 3. Credentials:
-   - **Adzuna** — type **Custom Auth**, JSON `{ "qs": { "app_id": "<id>", "app_key": "<key>" } }`, on `Adzuna Job Search`.
+   - **Adzuna** — type **Custom Auth**, on `Adzuna Job Search`. Paste plain JSON into the **JSON** box, with no `{{ }}` expression (an expression here makes n8n report "invalid custom JSON"):
+     `{ "qs": { "app_id": "<id>", "app_key": "<key>" } }`
    - **Companies House** (optional, UK) — type **Basic Auth**, user = API key from developer.company-information.service.gov.uk, empty password, on both `Companies House` nodes.
    - **SerpApi** (optional) — type **Query Auth**, name `api_key`, on `Google Jobs Search` and `SerpApi LinkedIn Profiles`.
 4. Activate and copy the production URLs of `Job Search Webhook` and `People Webhook` into `VITE_N8N_JOBS_URL` and `VITE_N8N_PEOPLE_URL`.

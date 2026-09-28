@@ -8,7 +8,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "16657a65-50b9-4592-9624-3ee8a412636b",
+      "id": "ffe18c3e-c107-4892-8fc2-ee76d5849ce3",
       "name": "Job Search Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -17,13 +17,13 @@
         0
       ],
       "webhookId": "unbias-job-search",
-      "notes": "POST body: { \"query\": \"CRM automation jobs in Germany\", \"keywords\": \"CRM automation\", \"location\": \"Germany\", \"user_id\": \"...\", \"user_email\": \"...\" }. Searches every source that covers the location, keeps legit relevant postings, returns { success, jobs, dropped, warnings }."
+      "notes": "POST body: { \"query\": \"automation jobs in USA\", \"keywords\": \"automation\", \"location\": \"USA\", \"remote\": true, \"user_id\": \"...\", \"user_email\": \"...\" }. Remote-first: remote boards plus remote postings from location boards. Searches every source that covers the location, keeps legit relevant postings, returns { success, jobs, dropped, warnings }."
     },
     {
       "parameters": {
-        "jsCode": "// ── Settings: edit these ──────────────────────────────────────────────\nconst SETTINGS = {\n  // Free key from jooble.org/api/about. Leave '' to skip Jooble.\n  jooble_api_key: '',\n  // Google Jobs via SerpApi (paid beyond its free tier). Needs the SerpApi credential.\n  use_serpapi: false,\n  // hh.ru asks every client to identify itself with a contact email. The app sends the signed-in\n  // user's email; this is only the fallback when a request arrives without one.\n  fallback_contact_email: '',\n  // Searched when the query names no location.\n  default_countries: ['us', 'gb'],\n  // Per-search caps, to protect free quotas.\n  max_adzuna_calls: 5,\n  max_jooble_calls: 2,\n  max_serpapi_calls: 2,\n};\n// ─────────────────────────────────────────────────────────────────────\n\nconst body = $input.first().json.body || {};\nconst keywords = String(body.keywords || '').trim() || String(body.query || '').trim();\nconst location = String(body.location || '').trim();\n\nconst COUNTRIES = {\n  us: ['us', 'usa', 'u.s.', 'united states', 'america'], ca: ['canada'], mx: ['mexico'], br: ['brazil', 'brasil'],\n  ar: ['argentina'], cl: ['chile'], co: ['colombia'], pe: ['peru'],\n  gb: ['uk', 'u.k.', 'united kingdom', 'great britain', 'britain', 'england', 'scotland', 'wales'], ie: ['ireland'],\n  de: ['germany', 'deutschland'], fr: ['france'], nl: ['netherlands', 'holland'], be: ['belgium'], at: ['austria'],\n  ch: ['switzerland'], es: ['spain'], it: ['italy'], pt: ['portugal'], pl: ['poland'], se: ['sweden'], no: ['norway'],\n  dk: ['denmark'], fi: ['finland'], cz: ['czech republic', 'czechia'], ro: ['romania'], hu: ['hungary'], gr: ['greece'],\n  ua: ['ukraine'], tr: ['turkey', 'turkiye'],\n  ru: ['russia', 'russian federation', 'россия'], kz: ['kazakhstan'], by: ['belarus'], uz: ['uzbekistan'],\n  au: ['australia'], nz: ['new zealand'],\n  in: ['india'], sg: ['singapore'], ae: ['uae', 'united arab emirates', 'dubai', 'abu dhabi'], sa: ['saudi arabia', 'ksa'],\n  qa: ['qatar'], jp: ['japan'], cn: ['china'], hk: ['hong kong'], kr: ['south korea', 'korea'], my: ['malaysia'],\n  id: ['indonesia'], ph: ['philippines'], th: ['thailand'], vn: ['vietnam'], pk: ['pakistan'], bd: ['bangladesh'],\n  lk: ['sri lanka'], il: ['israel'],\n  za: ['south africa'], ng: ['nigeria'], ke: ['kenya'], eg: ['egypt'], ma: ['morocco'], gh: ['ghana'],\n};\nconst NAMES = { us: 'United States', gb: 'United Kingdom', ae: 'United Arab Emirates', ru: 'Russia' };\nconst REGIONS = {\n  europe: ['gb', 'de', 'fr', 'nl', 'es', 'it', 'pl', 'ie', 'se', 'pt'],\n  'north america': ['us', 'ca'], americas: ['us', 'ca', 'br', 'mx'], 'latin america': ['br', 'mx', 'ar', 'co'],\n  asia: ['in', 'sg', 'ae', 'jp', 'my', 'ph'], 'middle east': ['ae', 'sa', 'qa'], 'gulf': ['ae', 'sa', 'qa'],\n  africa: ['za', 'ng', 'ke', 'eg'], oceania: ['au', 'nz'], apac: ['au', 'sg', 'in', 'jp'], emea: ['gb', 'de', 'ae', 'za'],\n  cis: ['ru', 'kz', 'by', 'uz'],\n  worldwide: ['us', 'gb', 'de', 'in', 'au'], global: ['us', 'gb', 'de', 'in', 'au'], anywhere: ['us', 'gb', 'de', 'in', 'au'],\n};\nconst ADZUNA = new Set(['at', 'au', 'be', 'br', 'ca', 'ch', 'de', 'es', 'fr', 'gb', 'in', 'it', 'mx', 'nl', 'nz', 'pl', 'sg', 'us', 'za']);\nconst HH_AREA = { ru: 113, kz: 40, by: 16, uz: 97 };\n\n// Big job-market cities typed without a country.\nconst CITIES = {\n  london: 'gb', manchester: 'gb', birmingham: 'gb', edinburgh: 'gb', 'new york': 'us', nyc: 'us', 'san francisco': 'us',\n  'los angeles': 'us', chicago: 'us', boston: 'us', seattle: 'us', austin: 'us', miami: 'us', toronto: 'ca', vancouver: 'ca',\n  montreal: 'ca', 'mexico city': 'mx', 'sao paulo': 'br', 'são paulo': 'br', berlin: 'de', munich: 'de', hamburg: 'de',\n  paris: 'fr', amsterdam: 'nl', brussels: 'be', vienna: 'at', zurich: 'ch', geneva: 'ch', madrid: 'es', barcelona: 'es',\n  milan: 'it', rome: 'it', warsaw: 'pl', dublin: 'ie', lisbon: 'pt', stockholm: 'se', sydney: 'au', melbourne: 'au',\n  brisbane: 'au', auckland: 'nz', mumbai: 'in', bangalore: 'in', bengaluru: 'in', delhi: 'in', 'new delhi': 'in',\n  hyderabad: 'in', pune: 'in', chennai: 'in', gurgaon: 'in', noida: 'in', guwahati: 'in', johannesburg: 'za',\n  'cape town': 'za', moscow: 'ru', 'saint petersburg': 'ru', 'st petersburg': 'ru', almaty: 'kz', minsk: 'by',\n  tashkent: 'uz', riyadh: 'sa', doha: 'qa', tokyo: 'jp', osaka: 'jp', 'kuala lumpur': 'my', jakarta: 'id', manila: 'ph',\n  bangkok: 'th', 'ho chi minh city': 'vn', karachi: 'pk', lahore: 'pk', dhaka: 'bd', lagos: 'ng', abuja: 'ng',\n  nairobi: 'ke', cairo: 'eg', accra: 'gh', casablanca: 'ma', istanbul: 'tr', 'tel aviv': 'il', seoul: 'kr',\n  shanghai: 'cn', beijing: 'cn',\n};\n\nconst countryOf = (text) => {\n  const t = text.trim().toLowerCase().replace(/\\.$/, '');\n  if (!t) return null;\n  if (COUNTRIES[t]) return t;\n  return Object.keys(COUNTRIES).find((code) => COUNTRIES[code].includes(t)) || null;\n};\n\n// \"UK\" → gb. \"Berlin, Germany\" → where=Berlin, de. \"Europe\" → region. \"Berlin\" → unknown country, text search only.\nlet countries = [];\nlet where = '';\nconst lower = location.toLowerCase();\nif (!location) countries = SETTINGS.default_countries;\nelse if (REGIONS[lower]) countries = REGIONS[lower];\nelse {\n  const whole = countryOf(location);\n  const parts = location.split(',').map((s) => s.trim()).filter(Boolean);\n  const last = parts.length > 1 ? countryOf(parts[parts.length - 1]) : null;\n  const city = CITIES[(parts[0] || '').toLowerCase()];\n  if (whole) countries = [whole];\n  else if (last) { countries = [last]; where = parts.slice(0, -1).join(', '); }\n  else if (city) { countries = [city]; where = parts[0]; }\n  else where = location; // a city or area we cannot place: text-based sources only\n}\n\nconst place = (cc) => (where ? `${where}, ` : '') + (NAMES[cc] || (COUNTRIES[cc] && COUNTRIES[cc][0].replace(/\\b\\w/g, (c) => c.toUpperCase())) || cc);\nconst adzuna = countries.filter((c) => ADZUNA.has(c)).slice(0, SETTINGS.max_adzuna_calls).map((country) => ({ country, what: keywords, where }));\n// hh.ru filters by area id; Moscow and St Petersburg have their own, other cities fall back to the country.\nconst HH_CITY = { moscow: 1, 'saint petersburg': 2, 'st petersburg': 2, 'st. petersburg': 2 };\nconst hh = countries.filter((c) => HH_AREA[c]).slice(0, 2).map((c) => ({ area: (c === 'ru' && HH_CITY[where.toLowerCase()]) || HH_AREA[c], text: keywords }));\nconst uncovered = countries.filter((c) => !ADZUNA.has(c) && !HH_AREA[c]);\nconst textTargets = uncovered.length ? uncovered.map(place) : countries.length ? [] : [where];\nconst jooble = SETTINGS.jooble_api_key ? textTargets.slice(0, SETTINGS.max_jooble_calls).map((loc) => ({ keywords, location: loc })) : [];\nconst serpapi = SETTINGS.use_serpapi ? textTargets.slice(0, SETTINGS.max_serpapi_calls).map((loc) => ({ q: `${keywords} jobs in ${loc}` })) : [];\n\nconst warnings = [];\nif (textTargets.length && !jooble.length && !serpapi.length) {\n  warnings.push(`No free source covers \"${textTargets.join(', ')}\". Add a Jooble key or enable SerpApi in Plan Job Sources.`);\n}\n\nreturn [{\n  json: {\n    valid: !!keywords,\n    message: 'Enter keywords to search for.',\n    keywords,\n    location,\n    countries,\n    adzuna,\n    hh,\n    jooble,\n    serpapi,\n    jooble_api_key: SETTINGS.jooble_api_key,\n    contact_email: String(body.user_email || '').trim() || SETTINGS.fallback_contact_email,\n    warnings,\n  },\n}];\n"
+        "jsCode": "// ── Settings: edit these ──────────────────────────────────────────────\nconst SETTINGS = {\n  // Free key from jooble.org/api/about. Leave '' to skip Jooble.\n  jooble_api_key: '',\n  // Google Jobs via SerpApi (paid beyond its free tier). Needs the SerpApi credential.\n  use_serpapi: false,\n  // hh.ru asks every client to identify itself with a contact email. The app sends the signed-in\n  // user's email; this is only the fallback when a request arrives without one.\n  fallback_contact_email: '',\n  // Searched when the query names no location.\n  default_countries: ['us', 'gb'],\n  // Remote-only boards. Both ask for light polling, so results are cached in the workflow:\n  // Jobicy at most once an hour per query, Remotive at most 4 times a day per query.\n  use_jobicy: true,\n  use_remotive: true,\n  jobicy_cache_minutes: 60,\n  remotive_cache_minutes: 360,\n  // Per-search caps, to protect free quotas.\n  max_adzuna_calls: 5,\n  max_jooble_calls: 2,\n  max_serpapi_calls: 2,\n};\n// ─────────────────────────────────────────────────────────────────────\n\nconst body = $input.first().json.body || {};\nconst keywords = String(body.keywords || '').trim() || String(body.query || '').trim();\nconst location = String(body.location || '').trim();\n// Remote-first: the app sends remote=false only when the user turns \"Remote only\" off.\nconst remote = body.remote !== false && body.remote !== 'false';\n\nconst COUNTRIES = {\n  us: ['us', 'usa', 'u.s.', 'united states', 'america'], ca: ['canada'], mx: ['mexico'], br: ['brazil', 'brasil'],\n  ar: ['argentina'], cl: ['chile'], co: ['colombia'], pe: ['peru'],\n  gb: ['uk', 'u.k.', 'united kingdom', 'great britain', 'britain', 'england', 'scotland', 'wales'], ie: ['ireland'],\n  de: ['germany', 'deutschland'], fr: ['france'], nl: ['netherlands', 'holland'], be: ['belgium'], at: ['austria'],\n  ch: ['switzerland'], es: ['spain'], it: ['italy'], pt: ['portugal'], pl: ['poland'], se: ['sweden'], no: ['norway'],\n  dk: ['denmark'], fi: ['finland'], cz: ['czech republic', 'czechia'], ro: ['romania'], hu: ['hungary'], gr: ['greece'],\n  ua: ['ukraine'], tr: ['turkey', 'turkiye'],\n  ru: ['russia', 'russian federation', 'россия'], kz: ['kazakhstan'], by: ['belarus'], uz: ['uzbekistan'],\n  au: ['australia'], nz: ['new zealand'],\n  in: ['india'], sg: ['singapore'], ae: ['uae', 'united arab emirates', 'dubai', 'abu dhabi'], sa: ['saudi arabia', 'ksa'],\n  qa: ['qatar'], jp: ['japan'], cn: ['china'], hk: ['hong kong'], kr: ['south korea', 'korea'], my: ['malaysia'],\n  id: ['indonesia'], ph: ['philippines'], th: ['thailand'], vn: ['vietnam'], pk: ['pakistan'], bd: ['bangladesh'],\n  lk: ['sri lanka'], il: ['israel'],\n  za: ['south africa'], ng: ['nigeria'], ke: ['kenya'], eg: ['egypt'], ma: ['morocco'], gh: ['ghana'],\n};\nconst NAMES = { us: 'United States', gb: 'United Kingdom', ae: 'United Arab Emirates', ru: 'Russia' };\nconst REGIONS = {\n  europe: ['gb', 'de', 'fr', 'nl', 'es', 'it', 'pl', 'ie', 'se', 'pt'],\n  'north america': ['us', 'ca'], americas: ['us', 'ca', 'br', 'mx'], 'latin america': ['br', 'mx', 'ar', 'co'],\n  asia: ['in', 'sg', 'ae', 'jp', 'my', 'ph'], 'middle east': ['ae', 'sa', 'qa'], 'gulf': ['ae', 'sa', 'qa'],\n  africa: ['za', 'ng', 'ke', 'eg'], oceania: ['au', 'nz'], apac: ['au', 'sg', 'in', 'jp'], emea: ['gb', 'de', 'ae', 'za'],\n  cis: ['ru', 'kz', 'by', 'uz'],\n  worldwide: ['us', 'gb', 'de', 'in', 'au'], global: ['us', 'gb', 'de', 'in', 'au'], anywhere: ['us', 'gb', 'de', 'in', 'au'],\n};\nconst ADZUNA = new Set(['at', 'au', 'be', 'br', 'ca', 'ch', 'de', 'es', 'fr', 'gb', 'in', 'it', 'mx', 'nl', 'nz', 'pl', 'sg', 'us', 'za']);\nconst HH_AREA = { ru: 113, kz: 40, by: 16, uz: 97 };\n\n// Big job-market cities typed without a country.\nconst CITIES = {\n  london: 'gb', manchester: 'gb', birmingham: 'gb', edinburgh: 'gb', 'new york': 'us', nyc: 'us', 'san francisco': 'us',\n  'los angeles': 'us', chicago: 'us', boston: 'us', seattle: 'us', austin: 'us', miami: 'us', toronto: 'ca', vancouver: 'ca',\n  montreal: 'ca', 'mexico city': 'mx', 'sao paulo': 'br', 'são paulo': 'br', berlin: 'de', munich: 'de', hamburg: 'de',\n  paris: 'fr', amsterdam: 'nl', brussels: 'be', vienna: 'at', zurich: 'ch', geneva: 'ch', madrid: 'es', barcelona: 'es',\n  milan: 'it', rome: 'it', warsaw: 'pl', dublin: 'ie', lisbon: 'pt', stockholm: 'se', sydney: 'au', melbourne: 'au',\n  brisbane: 'au', auckland: 'nz', mumbai: 'in', bangalore: 'in', bengaluru: 'in', delhi: 'in', 'new delhi': 'in',\n  hyderabad: 'in', pune: 'in', chennai: 'in', gurgaon: 'in', noida: 'in', guwahati: 'in', johannesburg: 'za',\n  'cape town': 'za', moscow: 'ru', 'saint petersburg': 'ru', 'st petersburg': 'ru', almaty: 'kz', minsk: 'by',\n  tashkent: 'uz', riyadh: 'sa', doha: 'qa', tokyo: 'jp', osaka: 'jp', 'kuala lumpur': 'my', jakarta: 'id', manila: 'ph',\n  bangkok: 'th', 'ho chi minh city': 'vn', karachi: 'pk', lahore: 'pk', dhaka: 'bd', lagos: 'ng', abuja: 'ng',\n  nairobi: 'ke', cairo: 'eg', accra: 'gh', casablanca: 'ma', istanbul: 'tr', 'tel aviv': 'il', seoul: 'kr',\n  shanghai: 'cn', beijing: 'cn',\n};\n\nconst countryOf = (text) => {\n  const t = text.trim().toLowerCase().replace(/\\.$/, '');\n  if (!t) return null;\n  if (COUNTRIES[t]) return t;\n  return Object.keys(COUNTRIES).find((code) => COUNTRIES[code].includes(t)) || null;\n};\n\n// \"UK\" → gb. \"Berlin, Germany\" → where=Berlin, de. \"Europe\" → region. \"Berlin\" → unknown country, text search only.\nlet countries = [];\nlet where = '';\nconst lower = location.toLowerCase();\nif (!location) countries = SETTINGS.default_countries;\nelse if (REGIONS[lower]) countries = REGIONS[lower];\nelse {\n  const whole = countryOf(location);\n  const parts = location.split(',').map((s) => s.trim()).filter(Boolean);\n  const last = parts.length > 1 ? countryOf(parts[parts.length - 1]) : null;\n  const city = CITIES[(parts[0] || '').toLowerCase()];\n  if (whole) countries = [whole];\n  else if (last) { countries = [last]; where = parts.slice(0, -1).join(', '); }\n  else if (city) { countries = [city]; where = parts[0]; }\n  else where = location; // a city or area we cannot place: text-based sources only\n}\n\nconst place = (cc) => (where ? `${where}, ` : '') + (NAMES[cc] || (COUNTRIES[cc] && COUNTRIES[cc][0].replace(/\\b\\w/g, (c) => c.toUpperCase())) || cc);\n// Location-based boards: in remote mode they only return postings that mention remote work.\nconst remoteWhat = remote ? `${keywords} remote` : keywords;\nconst adzuna = countries.filter((c) => ADZUNA.has(c)).slice(0, SETTINGS.max_adzuna_calls).map((country) => ({ country, what: remoteWhat, where: remote ? '' : where }));\n// hh.ru filters by area id; Moscow and St Petersburg have their own, other cities fall back to the country.\nconst HH_CITY = { moscow: 1, 'saint petersburg': 2, 'st petersburg': 2, 'st. petersburg': 2 };\nconst hh = countries.filter((c) => HH_AREA[c]).slice(0, 2).map((c) => {\n  const area = (!remote && c === 'ru' && HH_CITY[where.toLowerCase()]) || HH_AREA[c];\n  // schedule=remote is hh.ru's own remote-work filter; sent only in remote mode.\n  return { url: `https://api.hh.ru/vacancies?text=${encodeURIComponent(keywords)}&area=${area}&per_page=50&period=30&order_by=publication_time${remote ? '&schedule=remote' : ''}` };\n});\nconst uncovered = countries.filter((c) => !ADZUNA.has(c) && !HH_AREA[c]);\n// Remote boards cover every country, so in remote mode Jooble/Google Jobs are only a fallback when nothing else runs.\nconst remoteBoards = remote && (SETTINGS.use_jobicy || SETTINGS.use_remotive);\nconst textTargets = remoteBoards ? [] : uncovered.length ? uncovered.map(place) : countries.length ? [] : [where];\nconst jooble = SETTINGS.jooble_api_key ? textTargets.slice(0, SETTINGS.max_jooble_calls).map((loc) => ({ keywords: remoteWhat, location: loc })) : [];\nconst serpapi = SETTINGS.use_serpapi ? textTargets.slice(0, SETTINGS.max_serpapi_calls).map((loc) => ({ q: `${remote ? 'remote ' : ''}${keywords} jobs in ${loc}` })) : [];\n\n// ── Remote boards (Jobicy, Remotive): keyword search worldwide; the region filter runs in Rank Jobs ──\n// Jobicy narrows by region slug where it has one.\nconst JOBICY_GEO = { us: 'usa', ca: 'canada', gb: 'uk', de: 'germany', fr: 'france', es: 'spain', nl: 'netherlands', au: 'australia', in: 'india', br: 'brazil', mx: 'mexico' };\nconst REGION_GEO = { europe: 'europe', 'latin america': 'latam', apac: 'apac', emea: 'emea' };\nconst jobicyGeo = countries.length === 1 ? JOBICY_GEO[countries[0]] || '' : REGION_GEO[lower] || '';\nconst remoteRequests = [];\nif (remote && SETTINGS.use_jobicy) {\n  remoteRequests.push({\n    source: 'Jobicy',\n    ttl: SETTINGS.jobicy_cache_minutes,\n    url: `https://jobicy.com/api/v2/remote-jobs?count=100&tag=${encodeURIComponent(keywords)}${jobicyGeo ? `&geo=${jobicyGeo}` : ''}`,\n  });\n}\nif (remote && SETTINGS.use_remotive) {\n  remoteRequests.push({\n    source: 'Remotive',\n    ttl: SETTINGS.remotive_cache_minutes,\n    url: `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(keywords)}&limit=100`,\n  });\n}\n// Cached responses live in workflow static data (kept between production runs).\nconst cache = $getWorkflowStaticData('global');\ncache.remote = cache.remote || {};\nconst now = Date.now();\nfor (const [url, entry] of Object.entries(cache.remote)) {\n  if (now - entry.at > 24 * 3600 * 1000) delete cache.remote[url]; // keep the cache small\n}\nconst remoteMisses = remoteRequests.filter((r) => !cache.remote[r.url] || now - cache.remote[r.url].at > r.ttl * 60 * 1000);\n\n// Where a remote candidate may live for the job to count (\"USA\" → USA, North America, Americas, Worldwide …).\nconst REGION_OF = {\n  us: ['usa', 'united states', 'us only', 'north america', 'americas'], ca: ['canada', 'north america', 'americas'],\n  mx: ['mexico', 'latam', 'latin america', 'americas'], br: ['brazil', 'latam', 'latin america', 'americas'],\n  ar: ['argentina', 'latam', 'latin america', 'americas'], co: ['colombia', 'latam', 'latin america', 'americas'],\n  gb: ['uk', 'united kingdom', 'europe', 'emea'], ie: ['ireland', 'europe', 'emea'],\n  au: ['australia', 'apac', 'oceania'], nz: ['new zealand', 'apac', 'oceania'],\n  in: ['india', 'asia', 'apac'], sg: ['singapore', 'asia', 'apac'], jp: ['japan', 'asia', 'apac'], ph: ['philippines', 'asia', 'apac'],\n  my: ['malaysia', 'asia', 'apac'], id: ['indonesia', 'asia', 'apac'], pk: ['pakistan', 'asia', 'apac'], vn: ['vietnam', 'asia', 'apac'],\n  ae: ['uae', 'united arab emirates', 'middle east', 'emea'], sa: ['saudi', 'middle east', 'emea'], qa: ['qatar', 'middle east', 'emea'],\n  za: ['south africa', 'africa', 'emea'], ng: ['nigeria', 'africa', 'emea'], ke: ['kenya', 'africa', 'emea'], eg: ['egypt', 'africa', 'emea'],\n  ru: ['russia', 'cis'], kz: ['kazakhstan', 'cis'], by: ['belarus', 'cis'], uz: ['uzbekistan', 'cis'],\n};\nconst EUROPE = ['de', 'fr', 'nl', 'be', 'at', 'ch', 'es', 'it', 'pt', 'pl', 'se', 'no', 'dk', 'fi', 'cz', 'ro', 'hu', 'gr', 'ua', 'tr'];\nfor (const cc of EUROPE) REGION_OF[cc] = [(COUNTRIES[cc] || [cc])[0], 'europe', 'emea', 'eu'];\nconst accept = new Set(['worldwide', 'anywhere', 'global', 'remote']);\nfor (const cc of countries) for (const term of REGION_OF[cc] || []) accept.add(term);\n// No location typed: every remote job counts.\nconst remoteAccept = location ? [...accept] : [];\n\nconst warnings = [];\nif (textTargets.length && !jooble.length && !serpapi.length) {\n  warnings.push(`No free source covers \"${textTargets.join(', ')}\". Add a Jooble key or enable SerpApi in Plan Job Sources.`);\n}\n\nreturn [{\n  json: {\n    valid: !!keywords,\n    message: 'Enter keywords to search for.',\n    keywords,\n    location,\n    remote,\n    countries,\n    adzuna,\n    hh,\n    jooble,\n    serpapi,\n    remote_requests: remoteRequests,\n    remote_misses: remoteMisses,\n    remote_accept: remoteAccept,\n    jooble_api_key: SETTINGS.jooble_api_key,\n    contact_email: String(body.user_email || '').trim() || SETTINGS.fallback_contact_email,\n    warnings,\n  },\n}];\n"
       },
-      "id": "b72d8949-f06d-4bd9-bbf5-7cc6ed8ebfe1",
+      "id": "d1cdc5e5-2634-4892-bf42-8cb126ab6619",
       "name": "Plan Job Sources",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -31,7 +31,7 @@
         -880,
         0
       ],
-      "notes": "SETTINGS at the top: Jooble key, SerpApi on/off, default countries, per-search caps. Picks sources by location: Adzuna (19 countries), hh.ru (Russia/CIS), Jooble or Google Jobs (everywhere else)."
+      "notes": "SETTINGS at the top: remote boards on/off and cache minutes, Jooble key, SerpApi on/off, default countries, per-search caps. Picks sources by location: Adzuna (19 countries), hh.ru (Russia/CIS), Jooble or Google Jobs (everywhere else)."
     },
     {
       "parameters": {
@@ -44,7 +44,7 @@
           },
           "conditions": [
             {
-              "id": "d7d2275d",
+              "id": "717ac462",
               "leftValue": "={{ $json.valid }}",
               "rightValue": "",
               "operator": {
@@ -59,7 +59,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "616969d0-9a28-41d5-9ec2-66a5d2d4ad12",
+      "id": "1c1726c1-2c61-4121-b777-560b8351b542",
       "name": "Valid Job Query?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -79,7 +79,99 @@
           },
           "conditions": [
             {
-              "id": "40fbcb3d",
+              "id": "fe391058",
+              "leftValue": "={{ $('Plan Job Sources').first().json.remote_misses.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "899c9416-98f6-43d6-8838-321e7162b6b3",
+      "name": "Use Remote Boards?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -440,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per request the plan made for this source.\nreturn $('Plan Job Sources').first().json.remote_misses.map((r) => ({ json: r }));\n"
+      },
+      "id": "ff9f8c1a-c55b-457a-af1d-186ddbcb979f",
+      "name": "Remote Board Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "LeadScrapper/1.0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "0986a814-b257-4ea3-bd34-38d94fcbc822",
+      "name": "Remote Board Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        -400
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Jobicy and Remotive (remote-only boards, free, no key). Only runs when the cached result for this query is older than the TTL in Plan Job Sources."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store fresh remote-board results in the workflow cache, trimmed to what Rank Jobs needs.\n// Jobicy and Remotive ask clients to poll sparingly; the TTLs in Plan Job Sources decide when to refetch.\nconst requests = $('Remote Board Requests').all().map((i) => i.json);\nconst cache = $getWorkflowStaticData('global');\ncache.remote = cache.remote || {};\nconst warnings = [];\n\nconst text = (s, max = 1500) =>\n  String(s || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;|&#x27;|&#8217;/g, \"'\")\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#\\d+;/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .slice(0, max);\n\nconst normalize = (source, res) => {\n  if (source === 'Jobicy') {\n    return (res.jobs || []).map((j) => ({\n      id: `jobicy:${j.id}`,\n      title: text(j.jobTitle, 200),\n      company: text(j.companyName, 200),\n      allowed: text(j.jobGeo, 200),\n      description: text(j.jobDescription || j.jobExcerpt),\n      url: j.url || '',\n      posted_at: j.pubDate || '',\n    }));\n  }\n  return (res.jobs || []).map((j) => ({\n    id: `remotive:${j.id}`,\n    title: text(j.title, 200),\n    company: text(j.company_name, 200),\n    allowed: text(j.candidate_required_location, 200),\n    description: text(j.description),\n    url: j.url || '',\n    posted_at: j.publication_date || '',\n  }));\n};\n\n$input.all().forEach((item, i) => {\n  const req = requests[i];\n  if (!req) return;\n  const res = item.json;\n  if (res.error || !Array.isArray(res.jobs)) {\n    const msg = res.error ? res.error.message || res.error : 'unexpected response';\n    warnings.push(`${req.source}: ${String(msg).slice(0, 160)}`);\n    return;\n  }\n  cache.remote[req.url] = { at: Date.now(), source: req.source, jobs: normalize(req.source, res) };\n});\n\nreturn [{ json: { remote_warnings: warnings } }];\n"
+      },
+      "id": "f0df0716-0443-4bb8-bca4-d7a20a2c8e9e",
+      "name": "Cache Remote Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6927d503",
               "leftValue": "={{ $('Plan Job Sources').first().json.adzuna.length }}",
               "rightValue": 0,
               "operator": {
@@ -93,7 +185,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "33b7b893-3eb7-4202-a88a-a54d05883769",
+      "id": "bd6ee175-f2db-4ee8-a287-a3e1e82e6352",
       "name": "Use Adzuna?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -106,7 +198,7 @@
       "parameters": {
         "jsCode": "// One item per request the plan made for this source.\nreturn $('Plan Job Sources').first().json.adzuna.map((r) => ({ json: r }));\n"
       },
-      "id": "ccd12987-21c0-4ae6-bc3c-d5ef03c5f903",
+      "id": "66c59df2-df49-491c-8797-80f4e6fc9df3",
       "name": "Adzuna Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -158,7 +250,7 @@
           }
         }
       },
-      "id": "ddb26293-fdf7-446c-92e9-349736d5613e",
+      "id": "a647e94a-a57b-4363-ad90-fbccfd325256",
       "name": "Adzuna Job Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -186,7 +278,7 @@
           },
           "conditions": [
             {
-              "id": "35f3d7bb",
+              "id": "337a1906",
               "leftValue": "={{ $('Plan Job Sources').first().json.hh.length }}",
               "rightValue": 0,
               "operator": {
@@ -200,7 +292,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "46d37f1c-95bb-477a-b2cd-8c05681971d1",
+      "id": "59d68b6a-e98e-443b-9429-a70ba484df1b",
       "name": "Use hh.ru?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -213,7 +305,7 @@
       "parameters": {
         "jsCode": "// One item per request the plan made for this source.\nreturn $('Plan Job Sources').first().json.hh.map((r) => ({ json: r }));\n"
       },
-      "id": "91c5134b-647b-4f47-a48f-56713ccc216a",
+      "id": "df37babd-1320-4d18-b81e-c0ccd28438e1",
       "name": "hh.ru Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -224,32 +316,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.hh.ru/vacancies",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "text",
-              "value": "={{ $json.text }}"
-            },
-            {
-              "name": "area",
-              "value": "={{ $json.area }}"
-            },
-            {
-              "name": "per_page",
-              "value": "50"
-            },
-            {
-              "name": "period",
-              "value": "30"
-            },
-            {
-              "name": "order_by",
-              "value": "publication_time"
-            }
-          ]
-        },
+        "url": "={{ $json.url }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -268,7 +335,7 @@
           }
         }
       },
-      "id": "783f496a-e0c0-48cd-b005-7c0d67db9dd1",
+      "id": "601a44ce-6ed3-4798-96af-8e6b3132086d",
       "name": "hh.ru Job Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -290,7 +357,7 @@
           },
           "conditions": [
             {
-              "id": "d652d0a6",
+              "id": "5a0aa41b",
               "leftValue": "={{ $('Plan Job Sources').first().json.jooble.length }}",
               "rightValue": 0,
               "operator": {
@@ -304,7 +371,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "6e9072d5-0188-4bea-95d2-e2170e7011bf",
+      "id": "659d9f45-b2cf-463c-beb2-a3ca83bc7268",
       "name": "Use Jooble?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -317,7 +384,7 @@
       "parameters": {
         "jsCode": "// One item per request the plan made for this source.\nreturn $('Plan Job Sources').first().json.jooble.map((r) => ({ json: r }));\n"
       },
-      "id": "20d384bf-d72f-4d23-8de6-3889a1bb3495",
+      "id": "e52b1ceb-30d7-4bac-8e6f-bd071fdb5b71",
       "name": "Jooble Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -342,7 +409,7 @@
           }
         }
       },
-      "id": "5f3a5a00-8bdb-4080-bc31-866b5aea1a9b",
+      "id": "942c1b58-da65-462f-9a4c-7d246add658c",
       "name": "Jooble Job Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -364,7 +431,7 @@
           },
           "conditions": [
             {
-              "id": "9f207ff5",
+              "id": "52c9160d",
               "leftValue": "={{ $('Plan Job Sources').first().json.serpapi.length }}",
               "rightValue": 0,
               "operator": {
@@ -378,7 +445,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "14ebaa7e-ac7b-49e4-b121-c66d9e87df61",
+      "id": "a8c02d23-9257-43d6-9aea-857e0e9bb249",
       "name": "Use Google Jobs?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -391,7 +458,7 @@
       "parameters": {
         "jsCode": "// One item per request the plan made for this source.\nreturn $('Plan Job Sources').first().json.serpapi.map((r) => ({ json: r }));\n"
       },
-      "id": "1d6b3f53-8032-4aa2-a7bc-8bcd9f87cd52",
+      "id": "2de71176-b16a-4a33-9cea-78eb884c2464",
       "name": "Google Jobs Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -431,7 +498,7 @@
           }
         }
       },
-      "id": "fed11c08-6884-4c25-941b-60da3414b01b",
+      "id": "40b7a0a9-0e3d-419b-a947-d9f6533e483e",
       "name": "Google Jobs Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -450,9 +517,9 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge every source, keep only relevant, recent postings from real employers, newest first.\nconst plan = $('Plan Job Sources').first().json;\nconst warnings = [...plan.warnings];\nconst MAX_AGE_DAYS = 30;\nconst MAX_RESULTS = 60;\n\nconst responses = (node) => {\n  try {\n    return $(node).all().map((i) => i.json);\n  } catch (e) {\n    return []; // source not used for this search\n  }\n};\nconst clean = (s) =>\n  String(s || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;|&#x27;/g, \"'\")\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/\\s+/g, ' ')\n    .trim();\nconst failed = (res, label) => {\n  const msg = res.error ? res.error.message || res.error : res.exception || (res.errors && JSON.stringify(res.errors[0]));\n  if (msg && !/hasn't returned any results/i.test(String(msg))) warnings.push(`${label}: ${String(msg).slice(0, 200)}`);\n  return !!msg;\n};\n\nconst jobs = [];\nfor (const res of responses('Adzuna Job Search')) {\n  if (failed(res, 'Adzuna')) continue;\n  for (const j of res.results || []) {\n    jobs.push({\n      id: j.id ? `adzuna:${j.id}` : undefined,\n      title: clean(j.title),\n      company: clean(j.company && j.company.display_name),\n      location: clean(j.location && j.location.display_name),\n      description: clean(j.description),\n      url: j.redirect_url || '',\n      posted_at: j.created || '',\n      source: 'Adzuna',\n    });\n  }\n}\nfor (const res of responses('hh.ru Job Search')) {\n  if (failed(res, 'hh.ru')) continue;\n  for (const j of res.items || []) {\n    jobs.push({\n      id: j.id ? `hh:${j.id}` : undefined,\n      title: clean(j.name),\n      company: clean(j.employer && j.employer.name),\n      location: clean(j.area && j.area.name),\n      description: clean([j.snippet && j.snippet.requirement, j.snippet && j.snippet.responsibility].filter(Boolean).join(' ')),\n      url: j.alternate_url || '',\n      posted_at: j.published_at || '',\n      source: 'hh.ru',\n    });\n  }\n}\nfor (const res of responses('Jooble Job Search')) {\n  if (failed(res, 'Jooble')) continue;\n  for (const j of res.jobs || []) {\n    jobs.push({\n      id: j.id ? `jooble:${j.id}` : undefined,\n      title: clean(j.title),\n      company: clean(j.company),\n      location: clean(j.location),\n      description: clean(j.snippet),\n      url: j.link || '',\n      posted_at: j.updated || '',\n      source: 'Jooble',\n    });\n  }\n}\nfor (const res of responses('Google Jobs Search')) {\n  if (failed(res, 'Google Jobs')) continue;\n  for (const j of res.jobs_results || []) {\n    const apply = (j.apply_options || []).find((o) => o && o.link);\n    jobs.push({\n      id: j.job_id || undefined,\n      title: clean(j.title),\n      company: clean(j.company_name),\n      location: clean(j.location),\n      description: clean(j.description),\n      url: (apply && apply.link) || j.share_link || '',\n      posted_at: (j.detected_extensions && j.detected_extensions.posted_at) || '',\n      source: 'Google Jobs',\n    });\n  }\n}\n\n// ── Legitimacy and relevance ──\n// Staffing agencies post on behalf of a hidden employer, so they are not a real company signal.\nconst AGENCY = /\\b(recruit\\w*|staffing|headhunt\\w*|personnel services|employment agency|talent solutions|job ?board)\\b/i;\nconst AGENCY_BRANDS = /^(hays|reed|randstad|adecco|manpower\\w*|robert half|michael page|page (personnel|executive)|kelly services|harvey nash|allegis|aerotek|teksystems|kforce|insight global|jobot|cybercoders|hudson rpo)\\b/i;\n// Common job-scam patterns: upfront fees, chat-app hiring, too-good pay promises.\nconst SCAM = /(registration fee|processing fee|training fee|pay (a|the) (small )?fee|security deposit|telegram|whatsapp (us|only|me)|earn \\$?\\d+[k,]?\\d* (per|a|\\/) ?(day|hour|week)|no (interview|experience) (needed|required).{0,40}(earn|\\$)|crypto (investment|trading) opportunit|work from home.{0,20}(earn|\\$\\d))/i;\nconst STOP = new Set(['job', 'jobs', 'role', 'roles', 'the', 'and', 'for', 'with', 'remote', 'hiring', 'vacancy', 'vacancies', 'opening', 'openings']);\nconst terms = plan.keywords.toLowerCase().split(/[^a-z0-9а-яё+#.]+/i).filter((t) => t.length >= 2 && !STOP.has(t));\nconst now = Date.now();\nconst ageDays = (raw) => {\n  const text = String(raw || '').toLowerCase();\n  const rel = /(\\d+)\\+?\\s*(hour|day|week|month)s?\\s+ago/.exec(text);\n  if (rel) return Number(rel[1]) * { hour: 1 / 24, day: 1, week: 7, month: 30 }[rel[2]];\n  const ms = Date.parse(raw);\n  return Number.isNaN(ms) ? null : (now - ms) / 86_400_000;\n};\n\nlet dropped = { agency: 0, scam: 0, irrelevant: 0, stale: 0, duplicate: 0, incomplete: 0 };\nconst seen = new Set();\nconst kept = [];\nfor (const j of jobs) {\n  if (!j.title || !j.company || !j.url) { dropped.incomplete++; continue; }\n  if (AGENCY.test(j.company) || AGENCY_BRANDS.test(j.company)) { dropped.agency++; continue; }\n  if (SCAM.test(`${j.title} ${j.description}`)) { dropped.scam++; continue; }\n  const text = `${j.title} ${j.description}`.toLowerCase();\n  if (terms.length && !terms.some((t) => text.includes(t))) { dropped.irrelevant++; continue; }\n  const age = ageDays(j.posted_at);\n  if (age != null && age > MAX_AGE_DAYS) { dropped.stale++; continue; }\n  const key = `${j.title}|${j.company}`.toLowerCase().replace(/[^a-z0-9а-яё|]/gi, '');\n  if (seen.has(key)) { dropped.duplicate++; continue; }\n  seen.add(key);\n  kept.push({ ...j, _age: age == null ? 999 : age });\n}\n\nkept.sort((a, b) => a._age - b._age);\nconst result = kept.slice(0, MAX_RESULTS).map(({ _age, company, ...j }) => ({ ...j, company: { name: company, location: j.location } }));\nreturn [{ json: { success: true, jobs: result, dropped, warnings } }];\n"
+        "jsCode": "// Merge every source, keep only relevant, recent postings from real employers, newest first.\nconst plan = $('Plan Job Sources').first().json;\nconst warnings = [...plan.warnings];\nconst MAX_AGE_DAYS = 30;\nconst MAX_RESULTS = 60;\n\nconst responses = (node) => {\n  try {\n    return $(node).all().map((i) => i.json);\n  } catch (e) {\n    return []; // source not used for this search\n  }\n};\nconst clean = (s) =>\n  String(s || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;|&#x27;/g, \"'\")\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/\\s+/g, ' ')\n    .trim();\nconst failed = (res, label) => {\n  const msg = res.error ? res.error.message || res.error : res.display || res.exception || (res.errors && JSON.stringify(res.errors[0]));\n  if (msg && !/hasn't returned any results/i.test(String(msg))) warnings.push(`${label}: ${String(msg).slice(0, 200)}`);\n  return !!msg;\n};\n\nconst jobs = [];\n// Remote boards first, so their entry wins when the same job is also on a location board.\nconst cache = $getWorkflowStaticData('global');\nconst remoteCache = cache.remote || {};\ntry {\n  warnings.push(...$('Cache Remote Results').first().json.remote_warnings);\n} catch (e) {\n  // every remote board was served from cache\n}\nfor (const req of plan.remote_requests || []) {\n  const entry = remoteCache[req.url];\n  if (!entry) continue;\n  for (const j of entry.jobs) {\n    jobs.push({ ...j, location: `Remote · ${j.allowed || 'Anywhere'}`, source: req.source, remote: true });\n  }\n}\nfor (const res of responses('Adzuna Job Search')) {\n  if (failed(res, 'Adzuna')) continue;\n  for (const j of res.results || []) {\n    jobs.push({\n      id: j.id ? `adzuna:${j.id}` : undefined,\n      title: clean(j.title),\n      company: clean(j.company && j.company.display_name),\n      location: clean(j.location && j.location.display_name),\n      description: clean(j.description),\n      url: j.redirect_url || '',\n      posted_at: j.created || '',\n      source: 'Adzuna',\n    });\n  }\n}\nfor (const res of responses('hh.ru Job Search')) {\n  if (failed(res, 'hh.ru')) continue;\n  for (const j of res.items || []) {\n    jobs.push({\n      id: j.id ? `hh:${j.id}` : undefined,\n      title: clean(j.name),\n      company: clean(j.employer && j.employer.name),\n      location: clean(j.area && j.area.name),\n      description: clean([j.snippet && j.snippet.requirement, j.snippet && j.snippet.responsibility].filter(Boolean).join(' ')),\n      url: j.alternate_url || '',\n      posted_at: j.published_at || '',\n      source: 'hh.ru',\n      remote: plan.remote, // searched with schedule=remote\n    });\n  }\n}\nfor (const res of responses('Jooble Job Search')) {\n  if (failed(res, 'Jooble')) continue;\n  for (const j of res.jobs || []) {\n    jobs.push({\n      id: j.id ? `jooble:${j.id}` : undefined,\n      title: clean(j.title),\n      company: clean(j.company),\n      location: clean(j.location),\n      description: clean(j.snippet),\n      url: j.link || '',\n      posted_at: j.updated || '',\n      source: 'Jooble',\n    });\n  }\n}\nfor (const res of responses('Google Jobs Search')) {\n  if (failed(res, 'Google Jobs')) continue;\n  for (const j of res.jobs_results || []) {\n    const apply = (j.apply_options || []).find((o) => o && o.link);\n    jobs.push({\n      id: j.job_id || undefined,\n      title: clean(j.title),\n      company: clean(j.company_name),\n      location: clean(j.location),\n      description: clean(j.description),\n      url: (apply && apply.link) || j.share_link || '',\n      posted_at: (j.detected_extensions && j.detected_extensions.posted_at) || '',\n      source: 'Google Jobs',\n    });\n  }\n}\n\n// ── Legitimacy and relevance ──\n// Staffing agencies post on behalf of a hidden employer, so they are not a real company signal.\nconst AGENCY = /\\b(recruit\\w*|staffing|headhunt\\w*|personnel services|employment agency|talent solutions|job ?board)\\b/i;\nconst AGENCY_BRANDS = /^(hays|reed|randstad|adecco|manpower\\w*|robert half|michael page|page (personnel|executive)|kelly services|harvey nash|allegis|aerotek|teksystems|kforce|insight global|jobot|cybercoders|hudson rpo)\\b/i;\n// Common job-scam patterns: upfront fees, chat-app hiring, too-good pay promises.\nconst SCAM = /(registration fee|processing fee|training fee|pay (a|the) (small )?fee|security deposit|telegram|whatsapp (us|only|me)|earn \\$?\\d+[k,]?\\d* (per|a|\\/) ?(day|hour|week)|no (interview|experience) (needed|required).{0,40}(earn|\\$)|crypto (investment|trading) opportunit|work from home.{0,20}(earn|\\$\\d))/i;\nconst STOP = new Set(['job', 'jobs', 'role', 'roles', 'the', 'and', 'for', 'with', 'remote', 'hiring', 'vacancy', 'vacancies', 'opening', 'openings']);\nconst terms = plan.keywords.toLowerCase().split(/[^a-z0-9а-яё+#.]+/i).filter((t) => t.length >= 2 && !STOP.has(t));\nconst now = Date.now();\nconst ageDays = (raw) => {\n  const text = String(raw || '').toLowerCase();\n  const rel = /(\\d+)\\+?\\s*(hour|day|week|month)s?\\s+ago/.exec(text);\n  if (rel) return Number(rel[1]) * { hour: 1 / 24, day: 1, week: 7, month: 30 }[rel[2]];\n  const ms = Date.parse(raw);\n  return Number.isNaN(ms) ? null : (now - ms) / 86_400_000;\n};\n\nlet dropped = { agency: 0, scam: 0, irrelevant: 0, stale: 0, duplicate: 0, incomplete: 0, not_remote: 0, region: 0 };\nconst REMOTE = /(\\bremote\\b|work from home|\\bwfh\\b|home[- ]based|telecommut|work from anywhere|fully distributed|удал[её]нн|remoto|télétravail|home ?office)/i;\n// Remote-board jobs name where the candidate may live; keep those open to the searched country/region.\nconst accept = plan.remote_accept || [];\nconst allowedHere = (allowed) => {\n  const a = String(allowed || '').toLowerCase();\n  if (!a || !accept.length) return true;\n  return accept.some((term) => new RegExp(`(^|[^a-z])${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}($|[^a-z])`).test(a));\n};\nconst seen = new Set();\nconst kept = [];\nfor (const j of jobs) {\n  if (!j.title || !j.company || !j.url) { dropped.incomplete++; continue; }\n  if (AGENCY.test(j.company) || AGENCY_BRANDS.test(j.company)) { dropped.agency++; continue; }\n  if (SCAM.test(`${j.title} ${j.description}`)) { dropped.scam++; continue; }\n  if (plan.remote && !j.remote && !REMOTE.test(`${j.title} ${j.location} ${j.description}`)) { dropped.not_remote++; continue; }\n  if (j.remote && j.allowed !== undefined && !allowedHere(j.allowed)) { dropped.region++; continue; }\n  const text = `${j.title} ${j.description}`.toLowerCase();\n  if (terms.length && !terms.some((t) => text.includes(t))) { dropped.irrelevant++; continue; }\n  const age = ageDays(j.posted_at);\n  if (age != null && age > MAX_AGE_DAYS) { dropped.stale++; continue; }\n  const key = `${j.title}|${j.company}`.toLowerCase().replace(/[^a-z0-9а-яё|]/gi, '');\n  if (seen.has(key)) { dropped.duplicate++; continue; }\n  seen.add(key);\n  kept.push({ ...j, _age: age == null ? 999 : age });\n}\n\nkept.sort((a, b) => a._age - b._age);\nconst result = kept.slice(0, MAX_RESULTS).map(({ _age, company, allowed, remote, ...j }) => {\n  const location = plan.remote && !/^remote/i.test(j.location) ? `Remote · ${j.location || 'Anywhere'}` : j.location;\n  return { ...j, location, company: { name: company, location } };\n});\nreturn [{ json: { success: true, jobs: result, dropped, warnings } }];\n"
       },
-      "id": "f7884627-0b18-47ad-80da-4ed0d09201be",
+      "id": "adbecf33-dc8c-40d4-a79f-79cc968c8253",
       "name": "Rank Jobs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -468,7 +535,7 @@
         "responseBody": "={{ JSON.stringify($json) }}",
         "options": {}
       },
-      "id": "f9e39921-0c64-4c49-bd03-49261048adee",
+      "id": "bfb38902-0c91-4b26-8624-0929533860eb",
       "name": "Respond Jobs",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
@@ -485,7 +552,7 @@
           "responseCode": 400
         }
       },
-      "id": "bb2e8e98-c129-4367-bc2a-fd859a091637",
+      "id": "fe62de56-7a45-4254-8f09-52cb49dcff53",
       "name": "Respond Invalid Job Query",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
@@ -501,7 +568,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "f4549902-cc53-4560-84ea-5a11d38888e1",
+      "id": "d3eb9a46-3dd5-4df8-b012-54926f961c24",
       "name": "People Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -516,7 +583,7 @@
       "parameters": {
         "jsCode": "// Shared setup for every people source: cleaned company name, role terms, LinkedIn query.\n\n// ── Settings ──\n// LinkedIn profiles via Google need the paid SerpApi credential. Off = free sources only.\nconst USE_LINKEDIN_SEARCH = false;\n\nconst body = $input.first().json.body || {};\nconst rawCompany = String(body.company || '').trim();\nconst roles = Array.isArray(body.roles) ? body.roles : [];\n\n// Title variants searched for each role the app offers. \"Hiring Manager\" is approximated\n// by the operations leaders who usually own automation/CRM hires.\nconst ROLE_TERMS = {\n  // Includes the legal/local titles used on imprint and team pages outside English-speaking countries.\n  'Founder/CEO': ['Founder', 'Co-Founder', 'CEO', 'Chief Executive Officer', 'Chief Executive', 'Managing Director', 'Owner',\n    'Geschäftsführer', 'Geschäftsführerin', 'Geschäftsführung', 'Inhaber', 'Inhaberin', 'Gérant', 'Gérante', 'PDG', 'Président',\n    'Directeur Général', 'Fundador', 'Fundadora', 'Director General', 'Amministratore Delegato', 'Prezes', 'Oprichter',\n    'Генеральный директор', 'Основатель', 'Директор'],\n  'COO': ['COO', 'Chief Operating Officer'],\n  'Head of Marketing': ['Head of Marketing', 'CMO', 'Chief Marketing Officer', 'Marketing Director', 'VP Marketing'],\n  'Head of Growth': ['Head of Growth', 'Growth Lead', 'VP Growth', 'Growth Director'],\n  'CTO': ['CTO', 'Chief Technology Officer', 'Technical Director', 'VP Engineering'],\n  'Hiring Manager': ['Head of Operations', 'Operations Director', 'Operations Manager', 'RevOps', 'Revenue Operations'],\n  'Recruiter': ['Recruiter', 'Talent Acquisition', 'Talent Partner', 'Head of People', 'HR Manager'],\n};\n\n// Websites and profiles usually say \"Acme Growth\", not \"Acme Growth Ltd\".\nconst SUFFIX = /[\\s,]+(ltd|limited|inc|llc|plc|gmbh|ag|sa|sas|sarl|srl|spa|bv|nv|ab|as|oy|pty|pvt|private limited|corp|corporation|co|company|group|llp|ооо|ао)\\.?$/i;\nconst company = rawCompany\n  .replace(/[\"«»“”]/g, '')\n  .replace(/^(ооо|ао|зао|пао|ип)\\s+/i, '') // Russian legal forms come first: ООО «Ромашка»\n  .replace(SUFFIX, '')\n  .trim();\n\nconst selected = roles.filter((r) => ROLE_TERMS[r]);\nif (!company || selected.length === 0) {\n  return [{ json: { valid: false, message: 'company and at least one known role are required' } }];\n}\n\nconst terms = [...new Set(selected.flatMap((r) => ROLE_TERMS[r]))];\nconst q = `site:linkedin.com/in \"${company}\" (${terms.map((t) => `\"${t}\"`).join(' OR ')})`;\n\nreturn [{\n  json: {\n    valid: true,\n    use_linkedin: USE_LINKEDIN_SEARCH,\n    q,\n    company,\n    raw_company: rawCompany,\n    website: String(body.website || '').trim(),\n    location: String(body.location || '').trim(),\n    roles: selected,\n    role_terms: ROLE_TERMS,\n  },\n}];\n"
       },
-      "id": "09b19bf1-ef57-49f6-b8b5-336a4321dcd7",
+      "id": "dc28f710-4762-455b-8010-0c6b38350262",
       "name": "Build People Query",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -537,7 +604,7 @@
           },
           "conditions": [
             {
-              "id": "7c02331d",
+              "id": "85049cf5",
               "leftValue": "={{ $json.valid }}",
               "rightValue": "",
               "operator": {
@@ -552,7 +619,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "f27c52f9-43f9-4c40-a5a9-25c8f5812461",
+      "id": "30ff70da-dd96-49c4-b94f-04ca3e016361",
       "name": "Valid Request?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -572,7 +639,7 @@
           },
           "conditions": [
             {
-              "id": "e33a8255",
+              "id": "b461a2c8",
               "leftValue": "={{ $json.use_linkedin }}",
               "rightValue": "",
               "operator": {
@@ -587,7 +654,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "0232b67b-66c2-4773-9027-21f3deecc98d",
+      "id": "c80307de-c43e-47bb-9c07-f3fa86e5cfd0",
       "name": "Use LinkedIn?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -627,7 +694,7 @@
           }
         }
       },
-      "id": "81c50546-5605-4d81-9145-c05d170258a2",
+      "id": "cb36f13d-0a56-4512-9f65-cbbc4f1568c2",
       "name": "SerpApi LinkedIn Profiles",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -648,7 +715,7 @@
       "parameters": {
         "jsCode": "// Source 1: public LinkedIn profiles found by Google (SerpApi). A failure here never blocks the other sources.\nconst res = $input.first().json;\nconst { company, roles, role_terms: ROLE_TERMS } = $('Build People Query').first().json;\n\nconst warnings = [];\nconst people = [];\nif (!$('Build People Query').first().json.use_linkedin) return [{ json: { people, warnings } }];\n\nif (res.error && !/hasn't returned any results/i.test(String(res.error.message || res.error))) {\n  warnings.push(`LinkedIn search: ${res.error.message || res.error}`);\n}\n\nconst companyKey = company.toLowerCase();\nconst escapeRegex = (s) => s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst matchRole = (text) =>\n  roles.find((r) => ROLE_TERMS[r].some((t) => new RegExp(`(^|[^a-z])${escapeRegex(t)}($|[^a-z])`, 'i').test(text)));\n\nconst seen = new Set();\nfor (const r of res.organic_results || []) {\n  const link = String(r.link || '');\n  if (!/linkedin\\.com\\/in\\//i.test(link)) continue;\n\n  // Titles look like \"Jane Carter - Founder & CEO - Acme | LinkedIn\" or \"Tom Reyes – Acme | LinkedIn\".\n  const parts = String(r.title || '').split(' | ')[0].split(/\\s[-–—]\\s/).map((s) => s.trim()).filter(Boolean);\n  const name = parts[0] || '';\n  if (!name || /linkedin/i.test(name)) continue;\n  const headline = parts.length > 2 || (parts[1] && !parts[1].toLowerCase().includes(companyKey)) ? parts[1] : '';\n\n  const text = `${r.title || ''} ${r.snippet || ''}`;\n  if (!text.toLowerCase().includes(companyKey)) continue; // profile belongs to another company\n  const role = matchRole(`${headline} ${r.snippet || ''}`);\n  if (!role) continue; // not one of the roles the user asked for\n\n  const url = link.split('?')[0];\n  if (seen.has(url)) continue;\n  seen.add(url);\n  people.push({ name, title: headline || role, role, linkedin_url: url, source: 'LinkedIn', source_url: url });\n}\n\nreturn [{ json: { people, warnings } }];\n"
       },
-      "id": "82e46e60-a44e-4bf5-b357-9a6401760a39",
+      "id": "15c21fc5-b1fe-4069-a604-d455f31d969c",
       "name": "Format LinkedIn People",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -684,7 +751,7 @@
           }
         }
       },
-      "id": "1a3edd61-2618-4103-bdee-0ffd6b78e932",
+      "id": "4140978f-930e-42db-9bc5-93c2dd7dce58",
       "name": "Companies House Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -705,7 +772,7 @@
       "parameters": {
         "jsCode": "// Source 2 (step 1): choose the Companies House entry that is this company. Exact name match only,\n// so a namesake is not mistaken for it. Only used for companies located in the UK.\nconst res = $input.first().json;\nconst { company, location } = $('Build People Query').first().json;\nconst prev = $('Format LinkedIn People').first().json;\nconst warnings = [...prev.warnings];\n\nconst UK = /\\b(uk|united kingdom|england|scotland|wales|northern ireland|london|manchester|birmingham|leeds|glasgow|bristol|edinburgh|liverpool|sheffield|newcastle|nottingham|cardiff|belfast|cambridge|oxford|reading|brighton|leicester|southampton)\\b/i;\nconst norm = (s) =>\n  String(s || '')\n    .toLowerCase()\n    .replace(/&/g, 'and')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(/\\b(ltd|limited|plc|llp|inc|company|co|group|uk)\\b/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\nlet number = '';\nlet title = '';\nif (!UK.test(location)) {\n  // Not a UK company: the register has nothing on it.\n} else if (res.error) {\n  warnings.push(`Companies House search: ${res.error.message || res.error}`);\n} else {\n  const target = norm(company);\n  const match = (res.items || []).find((i) => norm(i.title) === target && i.company_status !== 'dissolved');\n  if (match) {\n    number = match.company_number;\n    title = match.title;\n  }\n}\n\nreturn [{ json: { has_company: !!number, company_number: number, ch_title: title, warnings } }];\n"
       },
-      "id": "12d3c1b1-4055-49d6-94f0-bbf2a3766f99",
+      "id": "a2cbc6b7-278e-4d89-bd81-dac035d50f23",
       "name": "Pick Companies House Match",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -725,7 +792,7 @@
           },
           "conditions": [
             {
-              "id": "c57568a7",
+              "id": "3fb95e4f",
               "leftValue": "={{ $json.has_company }}",
               "rightValue": "",
               "operator": {
@@ -740,7 +807,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "id": "699e77fd-c0ad-4558-bd28-5fe96e96abfd",
+      "id": "e9304f78-b304-46f0-9c07-769b8e7f0a68",
       "name": "Has Company Number?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -772,7 +839,7 @@
           }
         }
       },
-      "id": "db8dcdf2-45fa-465a-ae7f-a8b42a1d641b",
+      "id": "386cd7d7-86c3-43e0-8363-0b6600de941d",
       "name": "Companies House Officers",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -792,7 +859,7 @@
       "parameters": {
         "jsCode": "// Source 2 (step 2): current directors/officers from Companies House, the UK's official company register.\n// Runs whether or not a company match was found, and carries every source's results forward.\nconst { roles, role_terms: ROLE_TERMS } = $('Build People Query').first().json;\nconst linkedin = $('Format LinkedIn People').first().json;\nconst pick = $('Pick Companies House Match').first().json;\nconst warnings = [...pick.warnings];\nconst people = [...linkedin.people];\n\nlet officers = null;\nif (pick.has_company) {\n  try {\n    officers = $('Companies House Officers').first().json;\n  } catch (e) {\n    officers = null; // branch did not run\n  }\n}\n\nconst escapeRegex = (s) => s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst matchRole = (text) =>\n  roles.find((r) => ROLE_TERMS[r].some((t) => new RegExp(`(^|[^a-z])${escapeRegex(t)}($|[^a-z])`, 'i').test(text)));\nconst titleCase = (s) => s.toLowerCase().replace(/(^|[\\s'-])([a-z])/g, (m, p, c) => p + c.toUpperCase());\n// \"CARTER, Jane Elizabeth\" → \"Jane Elizabeth Carter\"\nconst displayName = (raw) => {\n  const [last, first] = String(raw || '').split(',').map((s) => s.trim());\n  return titleCase(first ? `${first} ${last}` : last || '');\n};\n\nif (officers && officers.error) {\n  warnings.push(`Companies House officers: ${officers.error.message || officers.error}`);\n} else if (officers) {\n  const sourceUrl = `https://find-and-update.company-information.service.gov.uk/company/${pick.company_number}/officers`;\n  for (const o of officers.items || []) {\n    if (o.resigned_on) continue;\n    if (!/director|member/i.test(o.officer_role || '')) continue; // skip secretaries and corporate bodies\n    if (/corporate/i.test(o.officer_role || '')) continue;\n    const occupation = o.occupation && !/^(none|director|company director)$/i.test(o.occupation) ? titleCase(o.occupation) : '';\n    // A director whose occupation names another role still counts as a founder-level contact.\n    const exact = matchRole(occupation);\n    const role = exact || (roles.includes('Founder/CEO') ? 'Founder/CEO' : null);\n    if (!role) continue;\n    people.push({\n      name: displayName(o.name),\n      title: occupation || 'Director',\n      role,\n      linkedin_url: null,\n      source: 'Companies House',\n      source_url: sourceUrl,\n      role_guess: !exact, // other sources may know their real title\n    });\n  }\n}\n\nreturn [{ json: { people, warnings } }];\n"
       },
-      "id": "3912d39d-be7f-4d8b-9146-40ee94fa6ca1",
+      "id": "f69de96d-09af-4a2d-8c7d-b625f81e263a",
       "name": "Format Companies House People",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -805,7 +872,7 @@
       "parameters": {
         "jsCode": "// Source 3 (step 1): possible homepages for the company. The site given by the app comes first,\n// then domains guessed from the name using the company's country (\"Acme Growth\", Berlin → acmegrowth.de).\nconst { company, website, location } = $('Build People Query').first().json;\n\n// Country → its usual company domains, found from the location text (country or big city names).\nconst TLDS = [\n  [/\\b(uk|united kingdom|england|scotland|wales|london|manchester|birmingham|leeds|glasgow|bristol|edinburgh)\\b/i, ['.co.uk']],\n  [/\\b(germany|deutschland|berlin|munich|münchen|hamburg|frankfurt|cologne|köln|stuttgart|düsseldorf)\\b/i, ['.de']],\n  [/\\b(austria|österreich|vienna|wien|graz)\\b/i, ['.at']],\n  [/\\b(switzerland|schweiz|suisse|zurich|zürich|geneva|genève|basel|bern)\\b/i, ['.ch']],\n  [/\\b(france|paris|lyon|marseille|toulouse)\\b/i, ['.fr']],\n  [/\\b(netherlands|nederland|amsterdam|rotterdam|utrecht|eindhoven)\\b/i, ['.nl']],\n  [/\\b(belgium|belgique|brussels|bruxelles|antwerp)\\b/i, ['.be']],\n  [/\\b(spain|españa|madrid|barcelona|valencia)\\b/i, ['.es']],\n  [/\\b(italy|italia|milan|milano|rome|roma|turin|torino)\\b/i, ['.it']],\n  [/\\b(poland|polska|warsaw|warszawa|krakow|kraków|wroclaw)\\b/i, ['.pl']],\n  [/\\b(ireland|dublin|cork)\\b/i, ['.ie']],\n  [/\\b(sweden|stockholm|gothenburg)\\b/i, ['.se']],\n  [/\\b(portugal|lisbon|lisboa|porto)\\b/i, ['.pt']],\n  [/\\b(australia|sydney|melbourne|brisbane|perth|adelaide)\\b/i, ['.com.au']],\n  [/\\b(new zealand|auckland|wellington)\\b/i, ['.co.nz']],\n  [/\\b(canada|toronto|vancouver|montreal|calgary|ottawa)\\b/i, ['.ca']],\n  [/\\b(india|bangalore|bengaluru|mumbai|delhi|pune|hyderabad|chennai|kolkata|gurgaon|gurugram|noida|guwahati)\\b/i, ['.in', '.co.in']],\n  [/\\b(singapore)\\b/i, ['.sg', '.com.sg']],\n  [/\\b(uae|united arab emirates|dubai|abu dhabi|sharjah)\\b/i, ['.ae']],\n  [/\\b(saudi|riyadh|jeddah)\\b/i, ['.sa', '.com.sa']],\n  [/\\b(south africa|johannesburg|cape town|durban|pretoria)\\b/i, ['.co.za']],\n  [/\\b(nigeria|lagos|abuja)\\b/i, ['.com.ng', '.ng']],\n  [/\\b(kenya|nairobi)\\b/i, ['.co.ke']],\n  [/\\b(egypt|cairo)\\b/i, ['.com.eg']],\n  [/(russia|россия|moscow|москва|санкт|petersburg)/i, ['.ru']],\n  [/(kazakhstan|almaty|астана|алматы)/i, ['.kz']],\n  [/\\b(japan|tokyo|osaka)\\b/i, ['.co.jp', '.jp']],\n  [/\\b(brazil|brasil|são paulo|sao paulo|rio de janeiro)\\b/i, ['.com.br']],\n  [/\\b(mexico|méxico|mexico city|guadalajara)\\b/i, ['.com.mx']],\n  [/\\b(malaysia|kuala lumpur)\\b/i, ['.com.my', '.my']],\n  [/\\b(philippines|manila|cebu)\\b/i, ['.com.ph', '.ph']],\n  [/\\b(indonesia|jakarta)\\b/i, ['.co.id', '.id']],\n  [/\\b(pakistan|karachi|lahore|islamabad)\\b/i, ['.com.pk', '.pk']],\n  [/\\b(turkey|türkiye|istanbul|ankara)\\b/i, ['.com.tr']],\n];\n\nconst urls = [];\nconst add = (u) => {\n  if (u && !urls.includes(u)) urls.push(u);\n};\nif (website) add(/^https?:\\/\\//i.test(website) ? website : `https://${website}`);\n\n// Latin-script names only: a Cyrillic or CJK name has no guessable domain.\nconst words = company.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, 'and')\n  .replace(/[^a-z0-9 ]/g, '').split(/\\s+/).filter(Boolean);\nconst slugs = [...new Set([words.join(''), words.join('-')])].filter((s) => s.length >= 3);\nconst local = (TLDS.find(([re]) => re.test(location)) || [null, []])[1];\nconst tlds = [...new Set([...local, '.com', '.io'])];\nfor (const slug of slugs) for (const tld of tlds) add(`https://${slug}${tld}`);\n\nif (urls.length === 0) return [{ json: { url: '', given: false } }];\nreturn urls.slice(0, 8).map((url, i) => ({ json: { url, given: i === 0 && !!website } }));\n"
       },
-      "id": "8b4ed862-9733-40cd-9052-8a93fa59582e",
+      "id": "d1754cee-37b9-4aa0-a936-c1d263327cb6",
       "name": "Website Candidates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -837,7 +904,7 @@
           }
         }
       },
-      "id": "fc327c6e-98df-4b9f-98b5-f82398c4811b",
+      "id": "abe6e867-2f2c-485b-9ff7-86f1915a7789",
       "name": "Fetch Homepages",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -852,7 +919,7 @@
       "parameters": {
         "jsCode": "// Source 3 (step 2): pick the homepage that really is this company, then its team, about, contact and\n// legal pages (an imprint/Impressum legally names the managing directors in many countries).\n// Always outputs at least one item so the workflow continues; { url: '' } means no site was found.\nconst { company } = $('Build People Query').first().json;\nconst candidates = $('Website Candidates').all().map((i) => i.json);\nconst pages = $input.all().map((i) => i.json);\n\nconst flat = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9а-яё]/g, '');\nconst companyFlat = flat(company);\n\nlet home = null;\nfor (let i = 0; i < pages.length; i++) {\n  const html = typeof pages[i].data === 'string' ? pages[i].data : '';\n  if (!html || !candidates[i] || !candidates[i].url) continue;\n  // The given site is trusted; a guessed domain must mention the company to count.\n  if (candidates[i].given || (companyFlat.length >= 3 && flat(html.slice(0, 200000)).includes(companyFlat))) {\n    home = { url: candidates[i].url, html };\n    break;\n  }\n}\nif (!home) return [{ json: { url: '', site: '' } }];\n\nconst PAGES = /(team|about|leadership|people|founder|management|who-we-are|our-story|board|directors|contact|kontakt|impressum|imprint|legal|mentions|aviso-legal|colofon|o-kompanii|kontakty|company)/i;\nconst base = new URL(home.url);\nconst host = base.hostname.replace(/^www\\./, '');\nconst links = [];\nfor (const m of home.html.matchAll(/href\\s*=\\s*[\"']([^\"'#]+)[\"']/gi)) {\n  try {\n    const u = new URL(m[1], base);\n    if (u.hostname.replace(/^www\\./, '') !== host || !PAGES.test(u.pathname)) continue;\n    if (/\\.(pdf|jpg|png|zip)$/i.test(u.pathname)) continue;\n    const clean = `${u.origin}${u.pathname}`.replace(/\\/+$/, '');\n    if (!links.includes(clean)) links.push(clean);\n  } catch (e) {\n    // not a URL\n  }\n}\n// Team/leadership pages first, then legal, then contact.\nconst rank = (u) => (/(team|leadership|people|management|founder|board|directors)/i.test(u) ? 0 : /(impressum|imprint|legal|mentions)/i.test(u) ? 1 : /about|who-we-are|company/i.test(u) ? 2 : 3);\nlinks.sort((a, b) => rank(a) - rank(b));\nif (links.length === 0) for (const p of ['/about', '/team', '/contact', '/impressum']) links.push(`${base.origin}${p}`);\n\nreturn [home.url, ...links.slice(0, 6)].map((url) => ({ json: { url, site: base.origin } }));\n"
       },
-      "id": "dc7533e9-4956-44ff-b75d-0ee6293fc135",
+      "id": "b0dfdcd7-0322-435e-a2c2-135d71873bc2",
       "name": "Find Team Pages",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -883,7 +950,7 @@
           }
         }
       },
-      "id": "31a93513-1490-4404-baba-e66499d87d25",
+      "id": "e4040463-73c5-4973-a69e-192d52b8b9b3",
       "name": "Fetch Team Pages",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -897,7 +964,7 @@
       "parameters": {
         "jsCode": "// Source 3 (step 3): read names, titles and emails off the company's own pages, then merge all sources.\nconst { roles, role_terms: ROLE_TERMS } = $('Build People Query').first().json;\nconst prior = $('Format Companies House People').first().json;\nconst targets = $('Find Team Pages').all().map((i) => i.json);\nconst pages = $input.all().map((i) => i.json);\nconst warnings = [...prior.warnings];\nconst site = (targets[0] && targets[0].site) || '';\nconst siteHost = site ? new URL(site).hostname.replace(/^www\\./, '') : '';\n\nconst escapeRegex = (s) => s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst termRe = (t) => new RegExp(`(^|[^\\\\p{L}])${escapeRegex(t)}($|[^\\\\p{L}])`, 'iu');\nconst matchRole = (text) => roles.find((r) => ROLE_TERMS[r].some((t) => termRe(t).test(text)));\nconst ALL_TERMS = Object.values(ROLE_TERMS).flat().map((t) => t.toLowerCase());\nconst NOT_NAMES = /^(our|the|meet|about|contact|read|learn|view|join|find|get|see|more|home|team|leadership|management|company|services|careers|privacy|terms|cookie|board|directors|people|news|blog|impressum|imprint|kontakt|legal|registered|vat|tel|phone|email|address|sitz|handelsregister)\\b/i;\n\nconst decode = (s) =>\n  s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;|&#x27;|&rsquo;/g, \"'\")\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&#(\\d+);/g, (m, n) => String.fromCharCode(Number(n)))\n    .replace(/&([a-z])uml;/gi, (m, c) => ({ a: 'ä', o: 'ö', u: 'ü', A: 'Ä', O: 'Ö', U: 'Ü' })[c] || c)\n    .replace(/&szlig;/g, 'ß').replace(/&eacute;/g, 'é').replace(/&egrave;/g, 'è');\nconst isName = (s) => {\n  const t = String(s || '').replace(/^(dr|prof|mr|mrs|ms|herr|frau|mme|m)\\.?\\s+/i, '').trim();\n  if (t.length < 5 || t.length > 40 || NOT_NAMES.test(t)) return false;\n  if (ALL_TERMS.some((term) => t.toLowerCase().includes(term))) return false;\n  const words = t.split(/\\s+/);\n  return words.length >= 2 && words.length <= 4 && words.every((w) => /^\\p{Lu}[\\p{L}'’.-]*$/u.test(w));\n};\n\n// ── Emails: mailto, plain text, \"name [at] domain [dot] com\", and Cloudflare-protected addresses ──\nconst cfDecode = (hex) => {\n  const key = parseInt(hex.slice(0, 2), 16);\n  let out = '';\n  for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);\n  return out;\n};\nconst emailsIn = (html) => {\n  const found = new Set();\n  const text = decode(html)\n    .replace(/\\s*[[(]\\s*(at|@)\\s*[\\])]\\s*/gi, '@')\n    .replace(/\\s*[[(]\\s*(dot|\\.)\\s*[\\])]\\s*/gi, '.');\n  for (const m of text.matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/gi)) found.add(m[0].toLowerCase());\n  for (const m of html.matchAll(/data-cfemail=\"([0-9a-f]+)\"/gi)) found.add(cfDecode(m[1]).toLowerCase());\n  for (const m of html.matchAll(/\\/cdn-cgi\\/l\\/email-protection#([0-9a-f]+)/gi)) found.add(cfDecode(m[1]).toLowerCase());\n  // Only addresses on the company's own domain: skips agency, platform and tracking addresses.\n  return [...found].filter((e) => !/\\.(png|jpg|jpeg|gif|webp|svg)$/.test(e) && (!siteHost || e.split('@')[1].endsWith(siteHost)));\n};\nconst GENERIC = /^(info|hello|hi|contact|kontakt|office|mail|team|sales|enquiries|inquiries|support|admin|hr|jobs|careers|recruiting|bewerbung|press|marketing|welcome|general)@/;\n\nconst allEmails = new Set();\nconst found = [];\nconst add = (name, title, url, emails) => {\n  const role = matchRole(title);\n  const cleanName = String(name).replace(/^(dr|prof|mr|mrs|ms|herr|frau|mme|m)\\.?\\s+/i, '').trim();\n  if (!role || !isName(cleanName)) return;\n  const parts = cleanName.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\\s+/);\n  const first = parts[0];\n  const last = parts[parts.length - 1];\n  const personal = emails.filter((e) => !GENERIC.test(e));\n  const email =\n    personal.find((e) => {\n      const local = e.split('@')[0];\n      return (first.length >= 3 && local.includes(first)) || (last.length >= 3 && local.includes(last)) || local === `${first[0]}${last}` || local === `${first[0]}.${last}`;\n    }) || null;\n  found.push({ name: cleanName, title: title.trim().slice(0, 120), role, linkedin_url: null, email, source: 'Company website', source_url: url });\n};\n\nfor (let i = 0; i < pages.length; i++) {\n  const url = targets[i] && targets[i].url;\n  const html = typeof pages[i].data === 'string' ? pages[i].data : '';\n  if (!url || !html) continue;\n  const emails = emailsIn(html);\n  emails.forEach((e) => allEmails.add(e));\n\n  // Structured data: schema.org Person entries.\n  for (const m of html.matchAll(/<script[^>]*application\\/ld\\+json[^>]*>([\\s\\S]*?)<\\/script>/gi)) {\n    try {\n      const walk = (node) => {\n        if (!node || typeof node !== 'object') return;\n        if (Array.isArray(node)) return node.forEach(walk);\n        if (node['@type'] === 'Person' && node.name && node.jobTitle) add(String(node.name), String(node.jobTitle), url, emails);\n        Object.values(node).forEach(walk);\n      };\n      walk(JSON.parse(m[1]));\n    } catch (e) {\n      // invalid JSON-LD\n    }\n  }\n\n  const lines = decode(\n    html\n      .replace(/<(script|style|noscript|svg)[\\s\\S]*?<\\/\\1>/gi, ' ')\n      .replace(/<\\/?(p|div|h[1-6]|li|br|span|td|dt|dd|figcaption|strong|b|a|section|article)[^>]*>/gi, '\\n')\n      .replace(/<[^>]+>/g, ' ')\n  ).split('\\n').map((l) => l.replace(/\\s+/g, ' ').trim()).filter(Boolean);\n\n  for (let j = 0; j < lines.length; j++) {\n    const line = lines[j];\n    if (line.length > 160) continue;\n    // Imprint style: \"Geschäftsführer: Max Mustermann, Erika Musterfrau\" / \"CEO: Jane Carter\".\n    const label = /^([^:]{2,50}):\\s*(.+)$/.exec(line);\n    if (label && matchRole(label[1])) {\n      const names = label[2].split(/\\s*(?:,|;|\\/|&|\\bund\\b|\\band\\b|\\bet\\b|\\by\\b|\\bi\\b)\\s*/i);\n      const valid = names.filter(isName);\n      if (valid.length) {\n        valid.forEach((n) => add(n, label[1], url, emails));\n        continue;\n      }\n      // Label on its own line, names on the next: \"Geschäftsführer:\" / \"Max Mustermann\"\n    }\n    if (/^[^:]{2,50}:$/.test(line) && matchRole(line) && lines[j + 1]) {\n      lines[j + 1].split(/\\s*(?:,|;|&|\\bund\\b|\\band\\b)\\s*/i).filter(isName).forEach((n) => add(n, line.slice(0, -1), url, emails));\n      continue;\n    }\n    if (line.length > 80) continue;\n    // \"Jane Carter, CEO\" / \"Jane Carter – Founder\" on one line.\n    const split = line.split(/\\s*[,|–—]\\s*|\\s+-\\s+/);\n    if (split.length >= 2 && isName(split[0]) && matchRole(split.slice(1).join(' '))) {\n      add(split[0], split.slice(1).join(', '), url, emails);\n      continue;\n    }\n    // Team card: a role line next to a name line.\n    if (line.length <= 60 && matchRole(line)) {\n      const name = [lines[j - 1], lines[j + 1]].find((l) => l && isName(l));\n      if (name) add(name, line, url, emails);\n    }\n  }\n}\nif (targets.length && targets[0].url === '') warnings.push('Company website: not found');\n\n// Merge: one entry per person across sources (\"Jane Elizabeth Carter\" = \"Jane Carter\").\nconst key = (name) => {\n  const w = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\\p{L}\\s]/gu, '').split(/\\s+/).filter(Boolean);\n  return `${w[0] || ''} ${w[w.length - 1] || ''}`;\n};\nconst merged = new Map();\nfor (const p of [...prior.people, ...found]) {\n  const k = key(p.name);\n  const prev = merged.get(k);\n  if (!prev) {\n    merged.set(k, { ...p, sources: [p.source] });\n    continue;\n  }\n  if (!prev.sources.includes(p.source)) prev.sources.push(p.source);\n  prev.linkedin_url = prev.linkedin_url || p.linkedin_url;\n  prev.email = prev.email || p.email || null;\n  if (prev.role_guess && !p.role_guess) {\n    prev.role = p.role;\n    prev.title = p.title;\n    prev.role_guess = false;\n  }\n  if (/linkedin\\.com/i.test(prev.source_url || '') && p.source !== 'LinkedIn') prev.source_url = p.source_url;\n}\n\nconst people = [...merged.values()].map(({ sources, source, role_guess, ...p }) => ({ ...p, email: p.email || null, source: sources.join(', ') }));\nconst emails = [...allEmails];\nconst personal = new Set(people.map((p) => p.email).filter(Boolean));\nconst generic = emails.filter((e) => GENERIC.test(e));\nreturn [{\n  json: {\n    success: true,\n    people,\n    // Company-level contact details found on the site, for the company record.\n    company: {\n      website: site || null,\n      email: generic.find((e) => /^(info|hello|contact|kontakt|office|sales|enquiries|mail)@/.test(e)) || generic[0] || null,\n      emails: emails.filter((e) => !personal.has(e)).slice(0, 10),\n    },\n    warnings,\n  },\n}];\n"
       },
-      "id": "050e5fdc-f0a5-4ea3-b596-3324ad9a0c9b",
+      "id": "c4d6ba69-25b2-4969-8b68-7c4ce2c79a83",
       "name": "Merge People",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -913,7 +980,7 @@
         "responseBody": "={{ JSON.stringify($json) }}",
         "options": {}
       },
-      "id": "9f352234-bc3f-4349-9d73-d5ae43d7b5b9",
+      "id": "40e09793-9501-48d1-8f20-c8c1b41d68c1",
       "name": "Respond People",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
@@ -930,7 +997,7 @@
           "responseCode": 400
         }
       },
-      "id": "28aca833-6f37-4119-b448-f214dafe4f5a",
+      "id": "6eb6246c-9f76-40e5-8efe-fc8f1c0de6ac",
       "name": "Respond Invalid Request",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
@@ -968,7 +1035,7 @@
       "main": [
         [
           {
-            "node": "Use Adzuna?",
+            "node": "Use Remote Boards?",
             "type": "main",
             "index": 0
           }
@@ -976,6 +1043,57 @@
         [
           {
             "node": "Respond Invalid Job Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Remote Boards?": {
+      "main": [
+        [
+          {
+            "node": "Remote Board Requests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Adzuna?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote Board Requests": {
+      "main": [
+        [
+          {
+            "node": "Remote Board Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote Board Search": {
+      "main": [
+        [
+          {
+            "node": "Cache Remote Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Remote Results": {
+      "main": [
+        [
+          {
+            "node": "Use Adzuna?",
             "type": "main",
             "index": 0
           }

@@ -12,7 +12,7 @@ const JOBS = [
     id: 'mock-1',
     title: 'CRM Automation Specialist',
     company: { name: 'Acme Growth Ltd', industry: 'Marketing Services', location: 'London, UK', website: 'acmegrowth.example', linkedin_url: '' },
-    location: 'London, UK',
+    location: 'Remote · UK',
     description: 'Build Zapier and n8n workflows, own our HubSpot CRM, and manage API integrations.',
     url: 'https://example.com/jobs/1',
     posted_at: '2 days ago',
