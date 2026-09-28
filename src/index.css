@@ -48,44 +48,6 @@
   --shadow-accent:  0 4px 16px rgba(240, 80, 30, 0.24);
 }
 
-:root {
-  --color-accent:           #F0501E;
-  --color-accent-hover:     #D8451A;
-  --color-accent-subtle:    #FDEDE7;
-  --color-ink:              #14161A;
-  --color-ink-2:            #17192B;
-
-  --color-page:             #E8EAF0;
-  --color-surface:          #FFFFFF;
-  --color-surface-subtle:   #F4F5F8;
-  --color-surface-sunken:   #F8FAFC;
-  --color-border:           #E2E8F0;
-  --color-border-strong:    #D1D5DB;
-
-  --color-text-primary:     #14161A;
-  --color-text-secondary:   #4B5264;
-  --color-text-tertiary:    #8A90A2;
-  --color-text-on-accent:   #FFFFFF;
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-8: 48px;
-  --space-10: 64px;
-
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 22px;
-  --radius-full: 9999px;
-
-  --shadow-xs: 0 1px 2px rgba(20, 22, 26, 0.04);
-  --shadow-sm: 0 2px 8px rgba(20, 22, 26, 0.06);
-  --shadow-md: 0 8px 24px rgba(20, 22, 26, 0.08);
-  --shadow-accent: 0 4px 16px rgba(240, 80, 30, 0.24);
-}
 
 /* ── Base ── */
 @layer base {
@@ -279,23 +241,8 @@
   color: #14161A;
 }
 
-.btn-icon {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #8A90A2;
-  transition: color 150ms ease-out, background-color 150ms ease-out;
-  cursor: pointer;
-}
-.btn-icon:hover {
-  background-color: #F1F5F9;
-  color: #14161A;
-}
 
-.btn-icon-sm {
+.btn-icon {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 9999px;
@@ -306,7 +253,7 @@
   transition: color 150ms ease-out, background-color 150ms ease-out;
   cursor: pointer;
 }
-.btn-icon-sm:hover {
+.btn-icon:hover {
   background-color: #F1F5F9;
   color: #14161A;
 }
@@ -332,7 +279,7 @@
   background-color: #17192B;
   color: #FFFFFF;
   font-weight: 700;
-  border-radius: 0.75rem;
+  border-radius: 9999px;
   padding: 0.625rem 1rem;
   font-size: 12px;
   display: inline-flex;

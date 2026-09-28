@@ -60,7 +60,7 @@ export function OfflinePage() {
           type="button"
           onClick={handleRetry}
           disabled={isChecking}
-          className="w-full rounded-full bg-[#F0501E] hover:bg-[#F0501E]/90 text-white text-[14px] font-bold py-3.5 px-6 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#F0501E]/30 cursor-pointer"
+          className="w-full rounded-full bg-[#D44314] hover:bg-[#B93A0E] text-white text-[14px] font-bold py-3.5 px-6 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#F0501E]/30 cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
           <span>{isChecking ? 'Checking Connection...' : 'Retry'}</span>

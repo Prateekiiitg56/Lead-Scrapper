@@ -13,7 +13,7 @@ const STATUS_DOT: Record<LeadStatus, string> = {
   LOST:           'bg-red-500',
 };
 
-const BASE = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium tracking-tight transition-all duration-150 text-[#374151] whitespace-nowrap';
+const BASE = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium tracking-tight transition-all duration-150 text-[#374151] whitespace-nowrap';
 
 /** Read-only status label, or a toggle button when `onClick` is given. */
 export function LeadStatusBadge({ status, onClick, active }: { status: LeadStatus; onClick?: () => void; active?: boolean }) {

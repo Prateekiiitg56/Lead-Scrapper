@@ -76,7 +76,7 @@ export function AlmoayyedGradient({ className = '', opacity = 1 }: { className?:
       ref={containerRef}
       className={`fixed inset-0 pointer-events-none z-0 transition-opacity ${className}`}
       style={{
-        backgroundColor: '#D7D5D5',
+        backgroundColor: '#E8EAF0',
         backgroundSize: '120px 120px, auto, auto, auto, auto',
         backgroundBlendMode: 'overlay, normal, normal, normal, normal',
         opacity,

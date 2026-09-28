@@ -26,7 +26,7 @@ export function OutreachPermissionModal({ open, onClose }: OutreachPermissionMod
         aria-labelledby={titleId}
         className="relative bg-white rounded-[28px] p-6 sm:p-7 max-w-md w-full space-y-5 shadow-2xl border border-[#d1d5db] animate-blur-fade-up"
       >
-        <button type="button" onClick={onClose} className="btn-icon-sm absolute top-5 right-5" aria-label="Close dialog">
+        <button type="button" onClick={onClose} className="btn-icon absolute top-5 right-5" aria-label="Close dialog">
           <X className="w-4 h-4" />
         </button>
 

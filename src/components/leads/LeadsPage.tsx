@@ -98,7 +98,7 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
       >
         <div className="flex items-center justify-between px-6 h-16 border-b border-[#d1d5db] bg-[#e8eaf0] flex-shrink-0">
           <div className="eyebrow text-[#374151] font-bold">Lead details</div>
-          <button type="button" onClick={onClose} className="btn-icon-sm" aria-label="Close lead details">
+          <button type="button" onClick={onClose} className="btn-icon" aria-label="Close lead details">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -285,7 +285,7 @@ function ScoreBar({ score }: { score: number }) {
   return (
     <span className="flex items-center gap-2">
       <span className="w-16 bg-[#E2E8F0] h-[5px] rounded-full overflow-hidden flex-shrink-0" aria-hidden="true">
-        <span className="block bg-[#F0501E] h-full rounded-full" style={{ width: `${Math.min(score, 100)}%` }} />
+        <span className="block bg-[#F0501E] h-full rounded-full" style={{ width: `${Math.min(score, 100)}%`, minWidth: 5 }} />
       </span>
       <span className="text-[11px] font-mono text-[#4B5264]">{score}%</span>
     </span>
@@ -469,7 +469,7 @@ export function LeadsPage() {
               placeholder="Search name, phone, email, city..."
             />
             {search && (
-              <button type="button" onClick={clearUrlSearch} className="absolute right-2 top-1/2 -translate-y-1/2 btn-icon-sm" aria-label="Clear search">
+              <button type="button" onClick={clearUrlSearch} className="absolute right-2 top-1/2 -translate-y-1/2 btn-icon" aria-label="Clear search">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -653,7 +653,7 @@ export function LeadsPage() {
                             remove.reset();
                             setDeletingLeadId(lead.id);
                           }}
-                          className="btn-icon-sm text-[#6B7280] hover:!text-red-700 hover:!bg-red-50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                          className="btn-icon text-[#6B7280] hover:!text-red-700 hover:!bg-red-50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                           aria-label={`Delete ${lead.business_name}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />

@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useId } from 'react';
 import { useDialog } from '@/hooks/useDialog';
 import { createPortal } from 'react-dom';
 import { X, Check } from 'lucide-react';
@@ -47,6 +47,7 @@ export function WelcomeServicesModal({
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useDialog(dialogRef, open, onClose);
+  const headingId = useId();
 
   // Handle card selection: show checkmark briefly, then fire callback & close
   const handleCardClick = useCallback(
@@ -70,7 +71,6 @@ export function WelcomeServicesModal({
   if (!open) return null;
 
   const displayName = userName?.split(' ')[0] || userName;
-  const headingId = 'welcome-modal-heading';
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -149,7 +149,7 @@ export function WelcomeServicesModal({
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.onerror = null;
-                      target.src = 'https://placehold.co/512x512/e2e8f0/4a5568?text=Image+1';
+                      target.style.visibility = 'hidden';
                     }}
                   />
                   {/* Front Image */}
@@ -161,7 +161,7 @@ export function WelcomeServicesModal({
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.onerror = null;
-                      target.src = 'https://placehold.co/512x512/cbd5e0/2d3748?text=Image+2';
+                      target.style.visibility = 'hidden';
                     }}
                   />
                 </div>

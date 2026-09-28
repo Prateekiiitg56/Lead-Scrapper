@@ -444,7 +444,7 @@ export function AppLayout() {
           </div>
         </header>
 
-        <nav aria-label="Primary" className="md:hidden px-3 py-2 border-b border-[#D1D5DB] bg-[#e8eaf0] flex items-center gap-1 overflow-x-auto scrollbar-hide">
+        <nav aria-label="Primary" className="md:hidden pl-3 pr-10 py-2 border-b border-[#D1D5DB] bg-[#e8eaf0] flex items-center gap-1 overflow-x-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -472,7 +472,7 @@ export function AppLayout() {
           </div>
         </main>
 
-        <footer className="px-4 sm:px-6 lg:px-10 py-3 border-t border-[#d1d5db] bg-[#e8eaf0]/80 backdrop-blur-xs flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#4B5264] font-mono">
+        <footer className="px-4 sm:px-6 lg:px-10 py-3 border-t border-[#d1d5db] bg-[#e8eaf0] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#4B5264] font-mono">
           <span>Lead-Scrapper</span>
           <div className="flex items-center gap-4">
             <Link to="/privacy" className="hover:text-[#14161A] transition-colors">Privacy Policy</Link>

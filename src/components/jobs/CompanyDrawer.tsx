@@ -61,7 +61,7 @@ export function CompanyDrawer({
       >
         <div className="flex items-center justify-between px-6 h-16 border-b border-[#d1d5db] bg-[#e8eaf0] flex-shrink-0">
           <div className="eyebrow text-[#374151] font-bold">Company details</div>
-          <button type="button" onClick={onClose} className="btn-icon-sm" aria-label="Close company details">
+          <button type="button" onClick={onClose} className="btn-icon" aria-label="Close company details">
             <X className="w-4 h-4" />
           </button>
         </div>

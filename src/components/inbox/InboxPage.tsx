@@ -43,7 +43,7 @@ function MessageBubble({ msg }: { msg: Conversation }) {
       <div className="max-w-[85%] sm:max-w-[78%]">
         <div
           className={`rounded-[18px] px-4 py-3 text-[13px] leading-relaxed shadow-xs whitespace-pre-wrap break-words ${
-            isInbound ? 'bg-white border border-[#cbd5e1] text-[#14161A] rounded-bl-xs' : 'bg-[#B93A0E] text-white font-medium rounded-br-xs'
+            isInbound ? 'bg-white border border-[#cbd5e1] text-[#14161A] rounded-bl-xs' : 'bg-[#D44314] text-white font-medium rounded-br-xs'
           }`}
         >
           <span className="sr-only">{isInbound ? 'They wrote: ' : 'You sent: '}</span>
@@ -196,7 +196,7 @@ export function InboxPage() {
             {inboxLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="px-5 py-4 border-b border-[#cbd5e1] flex items-center gap-3" aria-hidden="true">
-                  <div className="skeleton w-10 h-10 !rounded-xl flex-shrink-0" />
+                  <div className="skeleton w-10 h-10 !rounded-full flex-shrink-0" />
                   <div className="flex-1 space-y-2">
                     <div className="skeleton h-4 w-28" />
                     <div className="skeleton h-3 w-40" />
@@ -231,7 +231,7 @@ export function InboxPage() {
                         }`}
                       >
                         <span className="flex items-start gap-3">
-                          <span className={`w-10 h-10 rounded-xl bg-[#e5e7eb] border flex items-center justify-center text-[13px] font-mono font-bold flex-shrink-0 ${isSelected ? 'border-[#D44314] text-[#B93A0E]' : 'border-[#cbd5e1] text-[#14161A]'}`} aria-hidden="true">
+                          <span className={`w-10 h-10 rounded-full bg-[#e5e7eb] border flex items-center justify-center text-[13px] font-mono font-bold flex-shrink-0 ${isSelected ? 'border-[#D44314] text-[#B93A0E]' : 'border-[#cbd5e1] text-[#14161A]'}`} aria-hidden="true">
                             {(lead?.business_name?.charAt(0) || '?').toUpperCase()}
                           </span>
                           <span className="flex-1 min-w-0">
@@ -263,14 +263,14 @@ export function InboxPage() {
         </section>
 
         {/* Thread */}
-        <section aria-label="Conversation" className={`flex-1 flex-col bg-[#e2e4e8]/80 min-w-0 ${mobileShowChat ? 'flex' : 'hidden lg:flex'}`}>
+        <section aria-label="Conversation" className={`flex-1 flex-col bg-[#e8eaf0] min-w-0 ${mobileShowChat ? 'flex' : 'hidden lg:flex'}`}>
           {selectedLeadId && selectedLead ? (
             <div key={selectedLeadId} className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center gap-3 px-4 sm:px-6 h-16 border-b border-[#cbd5e1] bg-[#e8eaf0] flex-shrink-0">
-                <button type="button" onClick={() => setMobileShowChat(false)} className="lg:hidden btn-icon-sm" aria-label="Back to conversations">
+                <button type="button" onClick={() => setMobileShowChat(false)} className="lg:hidden btn-icon" aria-label="Back to conversations">
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <span className="w-9 h-9 rounded-xl bg-[#D44314] text-white flex items-center justify-center text-[12px] font-mono font-bold shadow-xs flex-shrink-0" aria-hidden="true">
+                <span className="w-9 h-9 rounded-full bg-[#D44314] text-white flex items-center justify-center text-[12px] font-mono font-bold shadow-xs flex-shrink-0" aria-hidden="true">
                   {(selectedLead.business_name?.charAt(0) || '?').toUpperCase()}
                 </span>
                 <div className="flex-1 min-w-0">
@@ -280,7 +280,7 @@ export function InboxPage() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <span className="hidden sm:inline-flex"><LeadStatusBadge status={selectedLead.status} /></span>
                   {selectedLead.phone && (
-                    <a href={`tel:${selectedLead.phone}`} className="btn-icon-sm hover:!text-[#B93A0E]" aria-label={`Call ${selectedLead.business_name}`}>
+                    <a href={`tel:${selectedLead.phone}`} className="btn-icon hover:!text-[#B93A0E]" aria-label={`Call ${selectedLead.business_name}`}>
                       <Phone className="w-4 h-4" aria-hidden="true" />
                     </a>
                   )}

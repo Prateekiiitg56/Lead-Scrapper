@@ -52,7 +52,7 @@ function Bubble({ text, direction, delay }: { text: string; direction: 'in' | 'o
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${
           direction === 'in'
             ? 'bg-white/15 border border-white/20 text-white font-medium rounded-bl-md'
-            : 'bg-[#F0501E] text-white font-bold rounded-br-md shadow-[#F0501E]/20'
+            : 'bg-[#D44314] text-white font-bold rounded-br-md shadow-[#F0501E]/20'
         }`}
       >
         {text}
@@ -148,7 +148,7 @@ function CtaSection({ onEnterApp }: { onEnterApp?: () => void }) {
       <div className="flex items-center justify-center gap-5 reveal-child" style={{ transitionDelay: '300ms' }}>
         <button
           onClick={onEnterApp}
-          className="rounded-full bg-[#F0501E] hover:bg-[#F0501E]/90 text-white px-8 py-4 text-[14px] font-bold transition-all shadow-lg shadow-[#F0501E]/30 cursor-pointer"
+          className="rounded-full bg-[#D44314] hover:bg-[#B93A0E] text-white px-8 py-4 text-[14px] font-bold transition-all shadow-lg shadow-[#F0501E]/30 cursor-pointer"
         >
           Open dashboard
         </button>

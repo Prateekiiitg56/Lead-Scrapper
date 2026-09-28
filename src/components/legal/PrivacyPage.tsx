@@ -1,15 +1,11 @@
 import { useNavigate, Link } from 'react-router-dom';
 import { Layers, ArrowLeft, ShieldCheck, Lock, CheckCircle2 } from 'lucide-react';
-import { AlmoayyedGradient } from '@/components/common/AlmoayyedGradient';
 
 export function PrivacyPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="relative min-h-screen bg-[#D7D5D5] font-sans text-[#14161A] overflow-x-hidden">
-      {/* Bloom Field Animated Mesh Gradient Background */}
-      <AlmoayyedGradient opacity={0.75} />
-
+    <div className="dark-surface relative min-h-screen bg-[#080a0c] font-sans text-white overflow-x-hidden">
       {/* Edge-to-Edge Container */}
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header Navigation */}
@@ -18,7 +14,7 @@ export function PrivacyPage() {
             <div className="w-9 h-9 rounded-xl bg-[#F0501E] text-white flex items-center justify-center shadow-md shadow-[#F0501E]/20 group-hover:scale-105 transition-transform">
               <Layers className="w-5 h-5 stroke-[2.5]" />
             </div>
-            <span className="hidden sm:inline text-[22px] font-sans font-bold text-white tracking-tight">
+            <span className="hidden sm:inline text-[22px] font-display text-white tracking-tight">
               Lead-Scrapper
             </span>
           </Link>

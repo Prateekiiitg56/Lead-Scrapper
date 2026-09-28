@@ -42,7 +42,7 @@ export function OutreachModal({ isOpen, onClose, icon, title, businessName, chil
           <button
             type="button"
             onClick={onClose}
-            className="btn-icon-sm flex-shrink-0"
+            className="btn-icon flex-shrink-0"
             aria-label="Close dialog"
           >
             <X className="w-4 h-4" />

@@ -674,13 +674,13 @@ export function SearchPage() {
           </div>
           {statsQuery.data && (
             <dl className="flex items-center gap-3">
-              <div className="bg-white rounded-[16px] px-5 py-3 text-center border border-[#E2E8F0] shadow-xs min-w-[120px]">
-                <dd className="text-display text-[28px] text-[#14161A]">{countSent}</dd>
+              <div className="bg-white rounded-[16px] px-5 py-3 text-center border border-[#E2E8F0] shadow-xs min-w-[120px] flex flex-col-reverse">
                 <dt className="eyebrow mt-0.5 text-[#374151] text-[10px]">Sent this month</dt>
+                <dd className="text-display text-[28px] text-[#14161A]">{countSent}</dd>
               </div>
-              <div className="bg-white rounded-[16px] px-5 py-3 text-center border border-[#E2E8F0] shadow-xs min-w-[120px]">
-                <dd className="text-display text-[28px] text-[#14161A]">{countTotal}</dd>
+              <div className="bg-white rounded-[16px] px-5 py-3 text-center border border-[#E2E8F0] shadow-xs min-w-[120px] flex flex-col-reverse">
                 <dt className="eyebrow mt-0.5 text-[#374151] text-[10px]">Total logged</dt>
+                <dd className="text-display text-[28px] text-[#14161A]">{countTotal}</dd>
               </div>
             </dl>
           )}
@@ -740,7 +740,7 @@ export function SearchPage() {
               >
                 {notice.tone === 'success' ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" aria-hidden="true" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />}
                 <span className="flex-1">{notice.text}</span>
-                <button type="button" onClick={() => setNotice(null)} className="btn-icon-sm !w-7 !h-7" aria-label="Dismiss message">
+                <button type="button" onClick={() => setNotice(null)} className="btn-icon !w-7 !h-7" aria-label="Dismiss message">
                   <X className="w-4 h-4" />
                 </button>
               </div>

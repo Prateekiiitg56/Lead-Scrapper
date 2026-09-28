@@ -53,7 +53,7 @@ export function LoginPage() {
   };
 
   return (
-    <main className="dark-surface relative min-h-screen bg-[#D7D5D5] flex items-center justify-center p-4 sm:p-6 font-sans text-[#14161A] overflow-hidden">
+    <main className="dark-surface relative min-h-screen bg-[#E8EAF0] flex items-center justify-center p-4 sm:p-6 font-sans text-[#14161A] overflow-hidden">
       {/* ── Bloom Field Animated Mesh Gradient Background ── */}
       <AlmoayyedGradient opacity={0.85} />
 

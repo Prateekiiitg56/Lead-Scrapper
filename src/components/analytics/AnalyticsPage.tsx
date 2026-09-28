@@ -224,7 +224,7 @@ export function AnalyticsPage() {
                 </div>
                 <Link
                   to="/search"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold bg-[#F0501E] text-white hover:bg-[#F0501E]/90 transition-all shadow-xs cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold bg-[#D44314] text-white hover:bg-[#B93A0E] transition-all shadow-xs cursor-pointer"
                 >
                   <Search className="w-3.5 h-3.5" />
                   <span>Discover Leads in a City</span>
@@ -272,7 +272,7 @@ export function AnalyticsPage() {
                   cy="80"
                   r="70"
                   fill="none"
-                  stroke="#ffffff"
+                  stroke="#DDE0E7"
                   strokeWidth="14"
                 />
                 {donutArcs.map((arc, i) => (
@@ -353,11 +353,19 @@ export function AnalyticsPage() {
                 className="w-full accent-[#F0501E] cursor-pointer h-2 bg-white rounded-lg border border-[#d1d5db]"
               />
 
-              <div className="flex justify-between text-[10px] font-mono text-[#374151] font-bold">
-                <span>7 Days</span>
-                <span>30 Days</span>
-                <span>60 Days</span>
-                <span>90 Days</span>
+              <div className="relative h-4 text-[10px] font-mono text-[#374151] font-bold" aria-hidden="true">
+                {[7, 30, 60, 90].map((d) => {
+                  const pct = ((d - 7) / (90 - 7)) * 100;
+                  return (
+                    <span
+                      key={d}
+                      className="absolute top-0 whitespace-nowrap"
+                      style={{ left: `${pct}%`, transform: `translateX(-${pct}%)` }}
+                    >
+                      {d} Days
+                    </span>
+                  );
+                })}
               </div>
             </div>
           </div>

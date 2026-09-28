@@ -131,7 +131,7 @@ export function DashboardPage() {
           </div>
 
           {/* Stem Bar Visualizer Chart (Stage stems with tooltip & active circle) */}
-          <div className="pt-4 pb-2 px-1 flex items-end justify-between gap-1 sm:gap-2 h-40 border-b border-[#E2E8F0] overflow-x-auto" role="list" aria-label="Pipeline stages">
+          <div className="pt-11 pb-2 px-1 flex items-end justify-between gap-1 sm:gap-2 h-48 border-b border-[#E2E8F0] overflow-x-auto" role="list" aria-label="Pipeline stages">
             {stageStems.map((item, idx) => {
               const stemPixelHeight = Math.max(Math.round((item.numVal / maxVal) * 95), 20);
 
@@ -209,11 +209,11 @@ export function DashboardPage() {
                 return (
                   <div
                     key={lead.id}
-                    className="bg-[#e8eaf0] rounded-[24px] p-5 shadow-xs border border-[#d1d5db] space-y-3 animate-blur-fade-up hover:border-[#F0501E]/40 transition-all text-[#14161A]"
+                    className="bg-white rounded-[22px] p-5 shadow-xs border border-[#E2E8F0] space-y-3 animate-blur-fade-up text-[#14161A]"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-10 h-10 rounded-xl ${chipBg} text-white font-bold text-sm flex items-center justify-center flex-shrink-0 font-mono shadow-xs`}>
+                        <div className={`w-10 h-10 rounded-full ${chipBg} text-white font-bold text-sm flex items-center justify-center flex-shrink-0 font-mono shadow-xs`}>
                           {(lead.business_name || '?').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
@@ -298,7 +298,7 @@ export function DashboardPage() {
                 className="w-7 h-7 rounded-full bg-white border border-[#d1d5db] hover:bg-gray-100 text-[#14161A] flex items-center justify-center font-bold text-sm flex-shrink-0 cursor-pointer"
                 aria-label="Open Inbox"
               >
-                +
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </Link>
             </div>
 
@@ -331,7 +331,7 @@ export function DashboardPage() {
                 className="w-7 h-7 rounded-full bg-white border border-[#d1d5db] hover:bg-gray-100 text-[#14161A] flex items-center justify-center font-bold text-sm flex-shrink-0 cursor-pointer"
                 aria-label="Open Inbox"
               >
-                +
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </Link>
             </div>
           </div>

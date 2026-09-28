@@ -47,7 +47,7 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
   return (
     <div className="dark-surface relative w-full h-[100svh] overflow-hidden bg-[#080a0c] text-white">
       {/* ── VIDEO (z-0) ── */}
-      <div className="fixed inset-0 w-full h-[100svh] z-0 overflow-hidden bg-[#080a0c] video-player-container">
+      <div className="absolute inset-0 w-full h-full z-0 overflow-hidden bg-[#080a0c] video-player-container">
         <video
           ref={videoRef0}
           src={VIDEO_URL}
@@ -74,7 +74,7 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
 
       {/* ── SCRIM (z-1) ── */}
       <div
-        className="fixed inset-0 z-[1] pointer-events-none"
+        className="absolute inset-0 z-[1] pointer-events-none"
         style={{
           background: 'linear-gradient(to top, rgba(8,10,12,0.96) 0%, rgba(8,10,12,0.45) 36%, transparent 64%)',
         }}
@@ -115,6 +115,18 @@ export function TerminusHero({ onEnterApp }: { onEnterApp?: () => void }) {
           </button>
         </div>
       </header>
+
+      <nav aria-label="Sections" className="md:hidden relative z-10 px-5 -mt-2 flex items-center gap-6">
+        {['Leads', 'Inbox', 'Analytics'].map((link) => (
+          <a
+            key={link}
+            href={`#${link.toLowerCase()}`}
+            className="text-[13px] text-white/80 hover:text-white font-medium py-2 transition-colors duration-200"
+          >
+            {link}
+          </a>
+        ))}
+      </nav>
 
       {/* ── HERO CONTENT (bottom-anchored) ── */}
       <main className="relative z-10 max-w-7xl mx-auto px-5 sm:px-8 pb-20 min-h-[calc(100svh-104px)] flex flex-col justify-end">
