@@ -18,8 +18,7 @@ export const AUTHORIZED_ADMIN_EMAILS = Array.from(
 
 /** Check if current user is an authorized admin to dispatch WhatsApp messages */
 export function isOutreachAuthorized(userEmail?: string | null): boolean {
+  // Fail closed: with no admin emails configured, nobody may dispatch.
   if (!userEmail) return false;
-  // If no admin emails configured in env, allow all authenticated users by default
-  if (AUTHORIZED_ADMIN_EMAILS.length === 0) return true;
   return AUTHORIZED_ADMIN_EMAILS.includes(userEmail.toLowerCase());
 }

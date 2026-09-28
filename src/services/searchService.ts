@@ -105,7 +105,7 @@ function normalizeSearchLead(raw: unknown, city: string | null): SearchLead | nu
   const name = asString(r.name ?? r.business_name);
   if (!name) return null;
   const website = asString(r.website);
-  const hasWebsiteFlag = asString(r.has_website).toLowerCase();
+  const hasWebsiteFlag = asString(typeof r.has_website === 'boolean' ? String(r.has_website) : r.has_website).toLowerCase();
   const rating = Number.parseFloat(asString(r.rating));
   return {
     name,
@@ -216,7 +216,7 @@ export async function sendWhatsAppTemplate(
       body: { name: lead.name, phone, address: lead.address, website: lead.website || '', template_name: template, user_id: user.id },
     },
     SEND_TIMEOUT_MS
-  )) as { success?: unknown; message?: unknown };
+  )) as { success?: unknown; message?: unknown; wamid?: unknown };
 
   if (json.success !== true) {
     throw new WebhookError('rejected', asString(json.message) || 'WhatsApp dispatch was not confirmed by the server.');
@@ -226,6 +226,7 @@ export async function sendWhatsAppTemplate(
     message: template === 'website_automation_pitch_v2' ? 'Website automation pitch (template)' : 'First outreach (template)',
     message_type: 'template',
     template_name: template,
+    wamid: asString(json.wamid) || null,
   });
 }
 

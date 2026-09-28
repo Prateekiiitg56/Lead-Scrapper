@@ -43,13 +43,13 @@ export async function authenticate(req: Request): Promise<{ user: User; db: Supa
   return { user: data.user, db };
 }
 
-/** Optional allowlist (AUTHORIZED_ADMIN_EMAILS, comma-separated). Unset means every signed-in user. */
+/** Admin allowlist (AUTHORIZED_ADMIN_EMAILS, comma-separated). Unset means nobody may send. */
 export function assertOutreachAllowed(user: User) {
   const allow = (Deno.env.get('AUTHORIZED_ADMIN_EMAILS') ?? '')
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  if (allow.length && !allow.includes((user.email ?? '').toLowerCase())) {
+  if (!allow.includes((user.email ?? '').toLowerCase())) {
     throw new HttpError(403, 'Outreach is restricted to authorized admin accounts.');
   }
 }

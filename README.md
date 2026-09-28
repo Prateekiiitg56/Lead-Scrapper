@@ -73,7 +73,7 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
 | `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
 | `VITE_N8N_USAGE_URL`, `VITE_N8N_LEAD_USAGE_URL` | n8n `unbias-api-usage` (Job Signals) and `unbias-lead-api-usage` (Lead Gen) webhooks: today's third-party API calls for the header gauge |
-| `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary) |
+| `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary). Unset = nobody can send |
 
 ### Step 3: Database
 Run in the Supabase SQL editor, in order:
@@ -90,7 +90,7 @@ Inbox WhatsApp replies and AI email drafting call Meta and Gemini with secret ke
 supabase functions deploy whatsapp-send-text
 supabase functions deploy ai-email-draft
 supabase secrets set META_ACCESS_TOKEN=... META_PHONE_NUMBER_ID=... GEMINI_API_KEY=...
-supabase secrets set AUTHORIZED_ADMIN_EMAILS=you@example.com   # optional allowlist for WhatsApp replies
+supabase secrets set AUTHORIZED_ADMIN_EMAILS=you@example.com   # required allowlist for WhatsApp replies (unset = nobody)
 ```
 
 Both verify the caller's Supabase JWT and act through RLS. `whatsapp-send-text` reads the phone number from the caller's own lead, never from the request. Until deployed, those two buttons show a "function is not deployed" error; everything else works.

@@ -193,22 +193,38 @@ export async function saveLeadForUser(
 
   if (error) {
     if (isMissingColumnError(error)) throw new Error(MISSING_MIGRATION_002);
-    // Unique phone/email owned by another account or an unassigned (n8n-created) row.
+    // Unique phone/email held by an unassigned (n8n-created) row or by another account.
     if (error.code === '23505' || error.code === '42501') {
-      throw new Error(
-        'This business already exists in the database but is not assigned to your account, so it cannot be added to your CRM.'
-      );
+      // Claim an unowned row, then merge into it through the normal owned-lead path.
+      if (await claimUnassignedLead(phone, email)) return saveLeadForUser(userId, input, opts);
+      throw new Error('This business is already in another account’s CRM, so it cannot be added to yours.');
     }
     throw error;
   }
   return data as Lead;
 }
 
+/** Assign an unowned lead matching phone/email to the caller (migration 005). True when one was claimed. */
+async function claimUnassignedLead(phone: string | null, email: string | null): Promise<boolean> {
+  const { data, error } = await supabase.rpc('claim_unassigned_lead', {
+    p_phone_clean: phone ? phone.slice(1) : null,
+    p_email: email,
+  });
+  // PGRST202: function not found (migration 005 not applied).
+  if (error?.code === 'PGRST202') {
+    throw new Error(
+      'This business exists in the database without an owner. Apply supabase/migrations/005_claim_unassigned_leads.sql so it can be added to your CRM.'
+    );
+  }
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
 /** Record an outbound touch: save/promote the lead, then log the conversation row. */
 export async function recordOutreach(
   userId: string,
   input: LeadInput,
-  conversation: Pick<Conversation, 'message' | 'message_type'> & { template_name?: string | null }
+  conversation: Pick<Conversation, 'message' | 'message_type'> & { template_name?: string | null; wamid?: string | null }
 ): Promise<Lead> {
   const lead = await saveLeadForUser(userId, input, { markContacted: true });
   const { error } = await supabase.from('conversations').insert({
@@ -217,6 +233,7 @@ export async function recordOutreach(
     message: conversation.message,
     message_type: conversation.message_type,
     template_name: conversation.template_name ?? null,
+    wamid: conversation.wamid || null,
     status: 'sent',
   });
   // 22P02: 'email'/'linkedin' are not yet values of the message_type enum (added by migration 002).

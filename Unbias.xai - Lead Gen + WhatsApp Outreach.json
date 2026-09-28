@@ -411,6 +411,18 @@
         ]
       },
       {
+        "parameters": {},
+        "id": "e8291a01-0005-4000-8000-000000000005",
+        "name": "Merge Lead Branches",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [
+          2000,
+          64
+        ],
+        "notes": "Waits for BOTH If Has Website branches and appends them. Without it, Aggregate Leads ran once per branch and the webhook answered with the website branch only, so 'No website' leads never reached the frontend."
+      },
+      {
         "parameters": {
           "aggregate": "aggregateAllItemData",
           "destinationFieldName": "leads",
@@ -654,86 +666,8 @@
       },
       {
         "parameters": {
-          "method": "POST",
-          "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/leads",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "apikey",
-                "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "name": "Prefer",
-                "value": "resolution=merge-duplicates,return=representation"
-              },
-              {
-                "name": "Authorization",
-                "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={\n  \"phone\": \"+{{$('Build Message').item.json.whatsapp_to}}\",\n  \"business_name\": \"{{$('Build Message').item.json.business_name}}\",\n  \"address\": \"{{$('Build Message').item.json.lead_address}}\",\n  \"status\": \"CONTACTED\",\n  \"last_contact_at\": \"{{new Date().toISOString()}}\"\n}",
-          "options": {}
-        },
-        "id": "a6d34a75-8297-4728-b911-0f3abae027dd",
-        "name": "Upsert Lead (Supabase)",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          208,
-          640
-        ],
-        "onError": "continueRegularOutput",
-        "notes": "Upserts the sent lead to Supabase database with CONTACTED status."
-      },
-      {
-        "parameters": {
-          "method": "POST",
-          "url": "=https://YOUR_SUPABASE_PROJECT_ID.supabase.co/rest/v1/conversations",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "apikey",
-                "value": "={{$env.SUPABASE_SERVICE_KEY}}"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "name": "Authorization",
-                "value": "Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={\n  \"lead_id\": \"{{$node['Upsert Lead (Supabase)'].json[0]?.id || $node['Upsert Lead (Supabase)'].json.id}}\",\n  \"direction\": \"OUTBOUND\",\n  \"message\": \"Template message sent\",\n  \"message_type\": \"template\",\n  \"status\": \"sent\",\n  \"wamid\": \"{{$node['Send WhatsApp Template'].json.messages?.[0]?.id}}\"\n}",
-          "options": {}
-        },
-        "id": "a2194d70-adb4-40ce-b212-471c39f29ffb",
-        "name": "Save Outbound Conversation (Supabase)",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          496,
-          624
-        ],
-        "onError": "continueRegularOutput",
-        "notes": "Logs outbound message in Supabase conversations table."
-      },
-      {
-        "parameters": {
           "respondWith": "json",
-          "responseBody": "={{ JSON.stringify({ success: true, message: 'Message sent to ' + $('Build Message').item.json.business_name }) }}",
+          "responseBody": "={{ JSON.stringify({ success: true, message: 'Message sent to ' + $('Build Message').item.json.business_name, wamid: $('Send WhatsApp Template').item.json.messages?.[0]?.id || null }) }}",
           "options": {}
         },
         "id": "2ec4ac34-103a-47e1-a2d4-c950ea2491b8",
@@ -743,7 +677,8 @@
         "position": [
           832,
           640
-        ]
+        ],
+        "notes": "Returns the Meta wamid. The frontend saves the lead and the outbound conversation under the signed-in user's account (RLS), so this workflow no longer writes to Supabase: its service-role insert created leads with no owner, which then blocked the user's own CRM save."
       },
       {
         "parameters": {
@@ -1231,7 +1166,7 @@
         "main": [
           [
             {
-              "node": "Aggregate Leads",
+              "node": "Merge Lead Branches",
               "type": "main",
               "index": 0
             }
@@ -1239,6 +1174,17 @@
         ]
       },
       "Format Non-Website Lead": {
+        "main": [
+          [
+            {
+              "node": "Merge Lead Branches",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge Lead Branches": {
         "main": [
           [
             {
@@ -1312,28 +1258,6 @@
         ]
       },
       "Log Outreach": {
-        "main": [
-          [
-            {
-              "node": "Upsert Lead (Supabase)",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Upsert Lead (Supabase)": {
-        "main": [
-          [
-            {
-              "node": "Save Outbound Conversation (Supabase)",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Save Outbound Conversation (Supabase)": {
         "main": [
           [
             {
