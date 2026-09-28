@@ -15,6 +15,7 @@ const WEBHOOKS = {
   jobs: import.meta.env.VITE_N8N_JOBS_URL || '',
   people: import.meta.env.VITE_N8N_PEOPLE_URL || '',
   usage: import.meta.env.VITE_N8N_USAGE_URL || '',
+  lead_usage: import.meta.env.VITE_N8N_LEAD_USAGE_URL || '',
 };
 
 /** Google Places + detail lookups + website scraping in n8n routinely take 30–60s. */
@@ -126,6 +127,8 @@ export interface SearchResult {
   duplicates: number;
   /** Rows dropped because they had no business name. */
   invalid: number;
+  /** When n8n fetched these Places results, if it answered from its cache; null when fresh. */
+  cachedAt: string | null;
 }
 
 /** Call the n8n Google Places search webhook, validating and de-duplicating the response. */
@@ -136,7 +139,7 @@ export async function searchLeads(businessType: string, businessTypeOther: strin
     SEARCH_TIMEOUT_MS
   );
 
-  const body = json as { success?: unknown; message?: unknown; leads?: unknown };
+  const body = json as { success?: unknown; message?: unknown; leads?: unknown; cached_at?: unknown };
   const rawLeads = Array.isArray(json) ? json : body.leads;
   if (!Array.isArray(json) && body.success === false) {
     throw new WebhookError('rejected', asString(body.message) || 'The search workflow reported a failure.');
@@ -158,7 +161,7 @@ export async function searchLeads(businessType: string, businessTypeOther: strin
     seen.add(key);
     leads.push(lead);
   }
-  return { leads, duplicates, invalid };
+  return { leads, duplicates, invalid, cachedAt: asString(body.cached_at) || null };
 }
 
 export type WhatsAppTemplate = 'website_automation_pitch_v2' | 'first_outreach';
@@ -328,9 +331,9 @@ export async function fetchStats(): Promise<StatsResponse> {
   return { success: true, sent_this_month: sent, total_logged: total };
 }
 
-/** Today's third-party API calls, counted by the Job Signals workflow in n8n. */
-export async function fetchApiUsage(): Promise<ApiUsage> {
-  const json = (await callWebhook('usage', { method: 'GET' }, SEND_TIMEOUT_MS)) as Record<string, unknown>;
+/** One n8n workflow's API usage report. */
+async function fetchWorkflowUsage(name: 'usage' | 'lead_usage'): Promise<ApiUsage> {
+  const json = (await callWebhook(name, { method: 'GET' }, SEND_TIMEOUT_MS)) as Record<string, unknown>;
   if (!Array.isArray(json.sources)) {
     throw new WebhookError('malformed', 'The usage service returned an unexpected response.');
   }
@@ -345,4 +348,15 @@ export async function fetchApiUsage(): Promise<ApiUsage> {
     };
   });
   return { reset_at: asString(json.reset_at) || null, sources: sources.filter((src) => src.name) };
+}
+
+/**
+ * Today's third-party API calls, counted in n8n: Google Places by the Lead Gen workflow,
+ * job and people sources by the Job Signals workflow. Shows whichever reports load.
+ */
+export async function fetchApiUsage(): Promise<ApiUsage> {
+  const reports = await Promise.allSettled([fetchWorkflowUsage('lead_usage'), fetchWorkflowUsage('usage')]);
+  const loaded = reports.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  if (loaded.length === 0) throw (reports[0] as PromiseRejectedResult).reason;
+  return { reset_at: loaded[0].reset_at, sources: loaded.flatMap((r) => r.sources) };
 }

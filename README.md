@@ -72,7 +72,7 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
 | `VITE_N8N_STATS_URL` | n8n `unbias-lead-stats` webhook (optional counters on Search) |
 | `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
-| `VITE_N8N_USAGE_URL` | n8n `unbias-api-usage` webhook (header gauge: today's third-party API calls) |
+| `VITE_N8N_USAGE_URL`, `VITE_N8N_LEAD_USAGE_URL` | n8n `unbias-api-usage` (Job Signals) and `unbias-lead-api-usage` (Lead Gen) webhooks: today's third-party API calls for the header gauge |
 | `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary) |
 
 ### Step 3: Database
@@ -216,8 +216,15 @@ Verified against the exported workflows in this repo.
 ```json
 { "business_type": "Restaurant", "business_type_other": "", "location": "Guwahati, Assam" }
 ```
-Response (`Respond With Leads`): `{ "success": true, "count": 2, "leads": [ { "name", "phone", "address", "rating", "has_website": "true"|"false", "website", "email", "linkedin_url" } ] }`.
+Response (`Respond With Leads`): `{ "success": true, "count": 2, "leads": [ { "name", "phone", "address", "rating", "has_website": "true"|"false", "website", "email", "linkedin_url" } ], "cached_at": null }`.
 The workflow drops places without a phone and phones already in the Google Sheet log. The client validates the response, removes duplicates (place id / phone), skips rows without a name, and times out after 120 s.
+
+`Plan Places Search` caches and rate-limits Google Places (settings at the top of the node):
+- **Cache**: the same business type + location within `cache_minutes` (default 24 hours, max `cache_entries` = 50) reuses the stored Places results instead of calling Google. The "already contacted" filter still runs on every search. `cached_at` says when the results were fetched; the Search page shows it.
+- **Rate limits**: at most `max_searches_per_minute` (default 5) fresh searches per minute across all users, and `daily_call_limit` (default 1000) Google Places calls per UTC day. A fresh search costs 1 Text Search + 1 Place Details call per result (up to 20). Over a limit, the workflow answers HTTP 429 `{ "success": false, "message": "..." }`; cached searches still work.
+- `GET unbias-lead-api-usage` (`API Usage Webhook`) reports today's Google Places calls for the header gauge. Keep `DAILY_LIMIT` in `Report API Usage` equal to `daily_call_limit`.
+
+The cache and counters live in the workflow's static data, which n8n saves only for production (active) runs.
 
 ### WhatsApp template — `POST VITE_N8N_SEND_URL`
 ```json

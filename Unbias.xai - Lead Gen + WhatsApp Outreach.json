@@ -429,7 +429,7 @@
       {
         "parameters": {
           "respondWith": "json",
-          "responseBody": "={{ JSON.stringify({ success: true, count: ($json.leads || []).length, leads: $json.leads || [] }) }}",
+          "responseBody": "={{ JSON.stringify({ success: true, count: ($json.leads || []).length, leads: $json.leads || [], cached_at: $('Plan Places Search').first().json.cached_at }) }}",
           "options": {}
         },
         "id": "03a44a82-e3b7-45aa-a866-bd2b9e41061a",
@@ -935,7 +935,7 @@
       },
       {
         "parameters": {
-          "jsCode": "// All prepped leads from this run (single aggregated item)\nconst preppedLeads = $('Aggregate Prepped Leads').first().json.prepped_leads || [];\n\n// Every row currently in the Leads sheet (this node's own input)\nconst contactedRows = $input.all();\nconst contactedPhones = new Set(\n  contactedRows\n    .map(item => (item.json.phone || '').toString().trim())\n    .filter(p => p.length > 0)\n);\n\n// Keep only leads that have a phone and are NOT already in the sheet\nconst newLeads = preppedLeads.filter(lead => {\n  const phone = (lead.lead_phone || '').toString().trim();\n  return phone.length > 0 && !contactedPhones.has(phone);\n});\n\nreturn newLeads.map(lead => ({ json: lead }));"
+          "jsCode": "const plan = $('Plan Places Search').first().json;\nlet preppedLeads;\nif (plan.cached_leads) {\n  preppedLeads = plan.cached_leads;\n} else {\n  // Fresh Places results: count the Place Details calls and cache the results for Plan Places Search.\n  preppedLeads = $('Aggregate Prepped Leads').first().json.prepped_leads || [];\n  // Daily third-party call counter, reported by the API Usage webhook. Resets at 00:00 UTC.\n  const countCalls = (calls) => {\n    const data = $getWorkflowStaticData('global');\n    const day = new Date().toISOString().slice(0, 10);\n    if (!data.usage || data.usage.day !== day) data.usage = { day, calls: {} };\n    for (const [source, n] of Object.entries(calls)) if (n) data.usage.calls[source] = (data.usage.calls[source] || 0) + n;\n  };\n  countCalls({ 'Google Places': $('Place Details').all().length });\n  const data = $getWorkflowStaticData('global');\n  data.places = data.places || {};\n  data.places[plan.cache_key] = { at: Date.now(), leads: preppedLeads };\n  const keys = Object.keys(data.places).sort((a, b) => data.places[a].at - data.places[b].at);\n  for (const key of keys.slice(0, Math.max(0, keys.length - plan.cache_entries))) delete data.places[key];\n}\n\n// Every row currently in the Leads sheet (this node's own input)\nconst contactedRows = $input.all();\nconst contactedPhones = new Set(\n  contactedRows\n    .map(item => (item.json.phone || '').toString().trim())\n    .filter(p => p.length > 0)\n);\n\n// Keep only leads that have a phone and are NOT already in the sheet\nconst newLeads = preppedLeads.filter(lead => {\n  const phone = (lead.lead_phone || '').toString().trim();\n  return phone.length > 0 && !contactedPhones.has(phone);\n});\n\nreturn newLeads.map(lead => ({ json: lead }));"
         },
         "id": "09f1c3c1-deb6-413c-8748-79ff32cfa5eb",
         "name": "Filter New Leads",
@@ -958,6 +958,154 @@
         ],
         "id": "3e3660a2-e67c-4fe8-83a2-b70fc2674043",
         "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Cache and rate limits for Google Places. Each fresh search costs 1 Text Search + 1 Place Details call per result (up to 20).\n// ── Settings: edit these ──────────────────────────────────────────────\nconst SETTINGS = {\n  // Places results for the same business type + location are reused for this long.\n  // The \"already contacted\" filter still runs on every search, so cached results stay current.\n  cache_minutes: 1440,\n  cache_entries: 50,\n  // Fresh (uncached) searches allowed per minute, across all users.\n  max_searches_per_minute: 5,\n  // Google Places calls allowed per UTC day; fresh searches are refused once it is reached. null = no cap.\n  // Keep DAILY_LIMIT in Report API Usage equal to this.\n  daily_call_limit: 1000,\n};\n// ─────────────────────────────────────────────────────────────────────\n\n// Daily third-party call counter, reported by the API Usage webhook. Resets at 00:00 UTC.\nconst countCalls = (calls) => {\n  const data = $getWorkflowStaticData('global');\n  const day = new Date().toISOString().slice(0, 10);\n  if (!data.usage || data.usage.day !== day) data.usage = { day, calls: {} };\n  for (const [source, n] of Object.entries(calls)) if (n) data.usage.calls[source] = (data.usage.calls[source] || 0) + n;\n};\n\nconst { search_query, search_location } = $input.first().json;\nconst data = $getWorkflowStaticData('global');\nconst now = Date.now();\n\ndata.places = data.places || {};\nfor (const [key, entry] of Object.entries(data.places)) {\n  if (now - entry.at > SETTINGS.cache_minutes * 60 * 1000) delete data.places[key];\n}\nconst cacheKey = JSON.stringify([String(search_query || '').trim().toLowerCase(), String(search_location || '').trim().toLowerCase()]);\nconst hit = data.places[cacheKey];\n\nlet blocked = '';\nif (!hit) {\n  const today = new Date().toISOString().slice(0, 10);\n  const usedToday = data.usage && data.usage.day === today ? data.usage.calls['Google Places'] || 0 : 0;\n  data.places_recent = (data.places_recent || []).filter((t) => now - t < 60 * 1000);\n  if (SETTINGS.daily_call_limit != null && usedToday >= SETTINGS.daily_call_limit) {\n    blocked = `Daily Google Places limit reached (${usedToday}/${SETTINGS.daily_call_limit} calls). New searches resume at 00:00 UTC; searches already made today still work from the cache.`;\n  } else if (data.places_recent.length >= SETTINGS.max_searches_per_minute) {\n    blocked = `Too many new searches (limit ${SETTINGS.max_searches_per_minute} per minute). Wait a minute and try again.`;\n  } else {\n    data.places_recent.push(now);\n    countCalls({ 'Google Places': 1 }); // Text Search; Place Details calls are counted in Filter New Leads\n  }\n}\n\nreturn [{\n  json: {\n    search_query,\n    search_location,\n    cache_key: cacheKey,\n    cache_entries: SETTINGS.cache_entries,\n    cached_leads: hit ? hit.leads : null,\n    cached_at: hit ? new Date(hit.at).toISOString() : null,\n    blocked,\n  },\n}];\n"
+        },
+        "id": "4a5eb24b-0c55-41c7-899b-b827e70b4252",
+        "name": "Plan Places Search",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -816,
+          420
+        ],
+        "notes": "SETTINGS at the top: cache time and size, fresh searches per minute, daily Google Places call limit."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "e5448720",
+                "leftValue": "={{ !!$json.blocked }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "3d8cecea-f531-4e5c-b43f-c2b57eb18b66",
+        "name": "Rate Limited?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -608,
+          420
+        ],
+        "notes": "A fresh search over the per-minute or daily limit is refused with HTTP 429."
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ success: false, message: $json.blocked }) }}",
+          "options": {
+            "responseCode": 429
+          }
+        },
+        "id": "30a4b060-d5a9-4728-a75b-90dfb4faf869",
+        "name": "Respond Rate Limited",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          -400,
+          560
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "b2038075",
+                "leftValue": "={{ !!$json.cached_leads }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "ca06c543-1d13-49bd-b323-dae2a09740a5",
+        "name": "Cached Places?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -400,
+          380
+        ],
+        "notes": "Same search within cache_minutes: skip Google Places and filter the cached results."
+      },
+      {
+        "parameters": {
+          "path": "unbias-lead-api-usage",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "d62cddce-dcd9-4536-8b8c-a0eaa2e9c1da",
+        "name": "API Usage Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1040,
+          1400
+        ],
+        "webhookId": "unbias-lead-api-usage",
+        "notes": "GET, no body. Returns today's Google Places calls: { success, day, reset_at, sources: [{ name, calls, daily_limit, note }] }."
+      },
+      {
+        "parameters": {
+          "jsCode": "// Today's Google Places calls against the daily limit.\nconst DAILY_LIMIT = 1000; // keep equal to daily_call_limit in Plan Places Search (null = no cap)\n\nconst day = new Date().toISOString().slice(0, 10);\nconst usage = $getWorkflowStaticData('global').usage;\nconst calls = usage && usage.day === day ? usage.calls : {};\nconst resetAt = new Date(`${day}T00:00:00Z`);\nresetAt.setUTCDate(resetAt.getUTCDate() + 1);\n\nreturn [{\n  json: {\n    success: true,\n    day,\n    reset_at: resetAt.toISOString(),\n    sources: [{\n      name: 'Google Places',\n      calls: calls['Google Places'] || 0,\n      daily_limit: DAILY_LIMIT,\n      note: 'Business search: 1 Text Search + 1 Place Details per result. Cached searches cost nothing.',\n    }],\n  },\n}];\n"
+        },
+        "id": "61e38f85-6faf-41b6-be5d-ca0c960302a3",
+        "name": "Report API Usage",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -816,
+          1400
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": {}
+        },
+        "id": "6717d348-50ed-4294-9946-0253d18f9fee",
+        "name": "Respond API Usage",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          -592,
+          1400
+        ]
       }
     ],
     "pinData": {},
@@ -977,7 +1125,7 @@
         "main": [
           [
             {
-              "node": "Google Places Text Search",
+              "node": "Plan Places Search",
               "type": "main",
               "index": 0
             }
@@ -1278,6 +1426,75 @@
           [
             {
               "node": "Send WhatsApp Template",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Plan Places Search": {
+        "main": [
+          [
+            {
+              "node": "Rate Limited?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Rate Limited?": {
+        "main": [
+          [
+            {
+              "node": "Respond Rate Limited",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Cached Places?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cached Places?": {
+        "main": [
+          [
+            {
+              "node": "Get Contacted Phones",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Google Places Text Search",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "API Usage Webhook": {
+        "main": [
+          [
+            {
+              "node": "Report API Usage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Report API Usage": {
+        "main": [
+          [
+            {
+              "node": "Respond API Usage",
               "type": "main",
               "index": 0
             }

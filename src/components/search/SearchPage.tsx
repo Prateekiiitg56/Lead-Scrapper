@@ -16,7 +16,7 @@ import {
 import { normalizePhone, normalizeEmail, saveLeadForUser } from '@/services/leadService';
 import { BUSINESS_TYPES, EMAIL_TEMPLATES, STATUS_LABELS, type EmailTemplateId } from '@/lib/constants';
 import { queryKeys } from '@/lib/queryClient';
-import { errorMessage, toExternalUrl } from '@/lib/utils';
+import { errorMessage, timeAgo, toExternalUrl } from '@/lib/utils';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useAuth } from '@/hooks/useAuth';
 import { useLeads } from '@/hooks/useLeads';
@@ -690,6 +690,11 @@ export function SearchPage() {
                       <p className="text-[12px] text-[#4B5264]">
                         {search.data!.duplicates > 0 && `${search.data!.duplicates} duplicate${search.data!.duplicates > 1 ? 's' : ''} removed. `}
                         {search.data!.invalid > 0 && `${search.data!.invalid} incomplete result${search.data!.invalid > 1 ? 's' : ''} skipped.`}
+                      </p>
+                    )}
+                    {search.data!.cachedAt && (
+                      <p className="text-[12px] text-[#4B5264]">
+                        Cached Google Places results, fetched {timeAgo(search.data!.cachedAt).toLowerCase()}. Already-contacted businesses are still filtered out.
                       </p>
                     )}
                   </div>
