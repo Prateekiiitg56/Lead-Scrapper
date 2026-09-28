@@ -7,11 +7,11 @@ function clean(value: unknown, max: number): string {
 }
 
 async function generate(prompt: string, maxOutputTokens: number): Promise<string> {
-  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-flash-latest';
+  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash';
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': requireEnv('GEMINI_API_KEY') },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens } }),
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens, thinkingConfig: { thinkingLevel: 'low' } } }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
