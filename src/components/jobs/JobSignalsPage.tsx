@@ -272,6 +272,11 @@ export function JobSignalsPage() {
                     {search.data!.invalid > 0 && `${search.data!.invalid} incomplete result${search.data!.invalid > 1 ? 's' : ''} skipped.`}
                   </p>
                 )}
+                {search.data!.cachedAt && (
+                  <p className="text-[12px] text-[#4B5264]">
+                    Cached results, fetched {timeAgo(search.data!.cachedAt).toLowerCase()}. No job board was called for this search.
+                  </p>
+                )}
                 {search.data!.warnings.length > 0 && (
                   <p className="text-[12px] text-amber-800 font-medium mt-1">{search.data!.warnings.join(' · ')}</p>
                 )}

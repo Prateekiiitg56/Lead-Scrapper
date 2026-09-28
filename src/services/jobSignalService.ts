@@ -174,6 +174,8 @@ export interface JobSearchResult {
   filtered: number;
   /** Sources that failed or could not cover the location; the search still returns the rest. */
   warnings: string[];
+  /** When the workflow fetched these results, if it answered from its search cache; null when fresh. */
+  cachedAt: string | null;
 }
 
 /** Search jobs through the n8n jobs webhook, score them, and store companies, openings and signals. */
@@ -186,7 +188,7 @@ export async function searchJobSignals(
   const { keywords, location } = parseJobQuery(query);
   const json = await callWebhook('jobs', { method: 'POST', body: { query, keywords, location, remote: opts.remote, user_id: userId, user_email: user.email || '' } }, JOBS_TIMEOUT_MS);
 
-  const body = json as { success?: unknown; message?: unknown; jobs?: unknown; dropped?: unknown; warnings?: unknown };
+  const body = json as { success?: unknown; message?: unknown; jobs?: unknown; dropped?: unknown; warnings?: unknown; cached_at?: unknown };
   const rawJobs = Array.isArray(json) ? json : body.jobs;
   if (!Array.isArray(json) && body.success === false) {
     throw new WebhookError('rejected', asString(body.message) || 'The job search workflow reported a failure.');
@@ -198,6 +200,7 @@ export async function searchJobSignals(
     ? Object.values(body.dropped as Record<string, unknown>).reduce<number>((sum, n) => sum + (Number(n) || 0), 0)
     : 0;
   const warnings = Array.isArray(body.warnings) ? body.warnings.map(asString).filter(Boolean) : [];
+  const cachedAt = asString(body.cached_at) || null;
 
   const seen = new Set<string>();
   const jobs: RawJob[] = [];
@@ -210,7 +213,7 @@ export async function searchJobSignals(
     seen.add(job.source_key);
     jobs.push(job);
   }
-  if (jobs.length === 0) return { jobs: [], duplicates, invalid, filtered, warnings };
+  if (jobs.length === 0) return { jobs: [], duplicates, invalid, filtered, warnings, cachedAt };
 
   const companies = await upsertCompanies(userId, jobs);
 
@@ -249,7 +252,7 @@ export async function searchJobSignals(
   const result = (openings as JobOpening[])
     .map((o) => ({ ...o, company: companyById.get(o.company_id)!, signal: signalByJob.get(o.id) ?? null }))
     .sort((a, b) => order.get(a.source_key)! - order.get(b.source_key)!);
-  return { jobs: result, duplicates, invalid, filtered, warnings };
+  return { jobs: result, duplicates, invalid, filtered, warnings, cachedAt };
 }
 
 /** The user's most recently found openings, newest first. */

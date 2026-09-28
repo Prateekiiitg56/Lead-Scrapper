@@ -262,6 +262,8 @@ Response: `{ "success": true, "people": [ { "name", "title", "role", "linkedin_u
 
 In remote mode, Adzuna and Jooble search for "<keywords> remote", hh.ru uses its `schedule=remote` filter, and any posting that does not mention remote work is dropped. Remote-board jobs are kept only when they are open to candidates in the searched country or region (for "USA": USA, North America, Americas or Worldwide). With no location, every remote job counts. Remote-board results are cached in the workflow's static data, which n8n keeps only for production (active) runs; manual test runs always refetch.
 
+Whole search results are cached too: the same keywords, location and **Remote only** setting within `search_cache_minutes` (default 6 hours) are answered from the cache without calling any source, and the app says so above the results. Only results where every source answered are cached, so a failed or rate-limited source is retried on the next search. `search_cache_entries` (default 20) caps the cache; the oldest entry goes first. Both settings are in `Plan Job Sources`.
+
 `Rank Jobs` then keeps only legit, relevant postings: drops staffing/recruitment agencies, common scam patterns (upfront fees, Telegram/WhatsApp-only hiring, pay promises), postings that do not mention the search terms, postings older than 30 days, and duplicates across sources. Newest first, max 60. Adzuna and Jooble return description snippets, so signal scores lean on job titles.
 
 **People** — merged from, in order of use:
