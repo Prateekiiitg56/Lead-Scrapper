@@ -16,6 +16,7 @@ async function generate(prompt: string, maxOutputTokens: number): Promise<string
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     console.error('gemini error', res.status, detail.slice(0, 500));
+    if (res.status === 402) throw new HttpError(402, 'AI drafting is unavailable: the Gemini API key has no billing or credits left. Use a standard template.');
     if (res.status === 429) throw new HttpError(429, 'AI drafting is rate-limited right now. Wait a minute or use a standard template.');
     throw new HttpError(502, `AI drafting failed (Gemini HTTP ${res.status}).`);
   }
