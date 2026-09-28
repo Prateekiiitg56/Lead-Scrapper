@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { AuthContext, JUST_SIGNED_IN_KEY, type AuthContextValue } from '@/context/authState';
+import { queryKeys } from '@/lib/queryClient';
+import { GMAIL_OAUTH_OPTIONS, saveGmailGrant } from '@/services/gmailService';
 
 function markFreshSignIn(on: boolean) {
   try {
@@ -19,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
+  const savedGrant = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -31,6 +34,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
       // Never let one account's cached CRM data survive into another session.
       if (event === 'SIGNED_OUT') queryClient.clear();
+      // Google returns a refresh token after sign-in or "Connect Gmail". Store it server-side once,
+      // outside this callback (supabase-js deadlocks on auth calls made inside it).
+      const grant = next?.provider_refresh_token;
+      if (grant && savedGrant.current !== grant) {
+        savedGrant.current = grant;
+        const userId = next.user.id;
+        setTimeout(() => {
+          saveGmailGrant(grant)
+            .then((status) => queryClient.setQueryData(queryKeys.gmailStatus(userId), status))
+            .catch((err) => {
+              queryClient.setQueryData(queryKeys.gmailStatus(userId), {
+                connected: false,
+                email: null,
+                error: err instanceof Error ? err.message : 'Gmail could not be connected.',
+              });
+            });
+        }, 0);
+      }
       setSession(next);
       setLoading(false);
     });
@@ -63,7 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     markFreshSignIn(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      // Ask for Gmail sending up front so cold emails go out from this account.
+      options: { ...GMAIL_OAUTH_OPTIONS, redirectTo: `${window.location.origin}/dashboard` },
     });
     if (error) markFreshSignIn(false);
     return error;

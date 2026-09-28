@@ -147,6 +147,44 @@ export async function fetchOutreachStats(userId: string): Promise<OutreachStats>
   return { sent_this_month: month.count ?? 0, total_logged: total.count ?? 0 };
 }
 
+export interface BotStats {
+  repliesThisMonth: number;
+  classifiedThisMonth: number;
+  lastInboundAt: string | null;
+}
+
+/** Activity of the inbound WhatsApp automation (n8n webhook + Gemini classifier) on the user's leads. */
+export async function fetchBotStats(userId: string): Promise<BotStats> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const inbound = () =>
+    supabase
+      .from('conversations')
+      .select('id, leads!inner(assigned_user_id)', { count: 'exact', head: true })
+      .eq('leads.assigned_user_id', userId)
+      .eq('direction', 'INBOUND')
+      .gte('timestamp', monthStart);
+  const [replies, classified, last] = await Promise.all([
+    inbound(),
+    inbound().not('ai_classification', 'is', null),
+    supabase
+      .from('conversations')
+      .select('timestamp, leads!inner(assigned_user_id)')
+      .eq('leads.assigned_user_id', userId)
+      .eq('direction', 'INBOUND')
+      .order('timestamp', { ascending: false })
+      .limit(1),
+  ]);
+  if (replies.error) throw replies.error;
+  if (classified.error) throw classified.error;
+  if (last.error) throw last.error;
+  return {
+    repliesThisMonth: replies.count ?? 0,
+    classifiedThisMonth: classified.count ?? 0,
+    lastInboundAt: (last.data?.[0] as { timestamp?: string } | undefined)?.timestamp ?? null,
+  };
+}
+
 export async function fetchOutboundCount(userId: string): Promise<number> {
   const { count, error } = await supabase
     .from('conversations')

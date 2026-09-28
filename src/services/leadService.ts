@@ -44,6 +44,17 @@ export function computeLeadStats(leads: Pick<Lead, 'status'>[]): LeadStats {
   return stats;
 }
 
+/**
+ * Cumulative funnel reach. A lead's status moves forward, so "contacted" must also count
+ * leads that have since replied or converted, not only those still in CONTACTED.
+ */
+export function funnelReach(s: LeadStats): { contacted: number; replied: number } {
+  return {
+    contacted: s.total - s.new,
+    replied: s.replied + s.interested + s.meeting_booked + s.client,
+  };
+}
+
 export async function updateLead(id: string, updates: Partial<Lead>): Promise<Lead> {
   // .single() turns an RLS-filtered zero-row update into an error instead of a silent no-op.
   const { data, error } = await supabase.from('leads').update(updates).eq('id', id).select().single();

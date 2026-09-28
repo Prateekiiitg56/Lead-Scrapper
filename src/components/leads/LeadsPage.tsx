@@ -273,7 +273,7 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
 function SortHeader({ field, label, sortField, sortOrder, onSort }: { field: SortField; label: string; sortField: SortField; sortOrder: 'asc' | 'desc'; onSort: (f: SortField) => void }) {
   const active = sortField === field;
   return (
-    <button type="button" onClick={() => onSort(field)} className="flex items-center gap-1.5 hover:text-[#14161A] cursor-pointer font-bold transition-colors" aria-label={`Sort by ${label}`}>
+    <button type="button" onClick={() => onSort(field)} className="flex items-center gap-1.5 hover:text-[#14161A] cursor-pointer font-bold uppercase transition-colors" aria-label={`Sort by ${label}`}>
       <span>{label}</span>
       {active && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-[#B93A0E]" aria-hidden="true" /> : <ArrowDown className="w-3 h-3 text-[#B93A0E]" aria-hidden="true" />)}
     </button>

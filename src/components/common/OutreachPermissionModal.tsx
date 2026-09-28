@@ -42,7 +42,7 @@ export function OutreachPermissionModal({ open, onClose }: OutreachPermissionMod
 
         <p className="text-[13px] text-[#374151] font-medium leading-relaxed bg-[#f8f9fc] p-4 rounded-[18px] border border-[#d1d5db]">
           Sending WhatsApp messages incurs Meta API costs (<strong>₹0.80 per message</strong>). Message dispatch is
-          restricted to authorized admin accounts.
+          restricted to authorized admin accounts. Email outreach is open to everyone and goes out from your own Gmail.
         </p>
 
         {adminEmail && (

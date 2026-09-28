@@ -20,6 +20,8 @@ export const queryKeys = {
   outboundCount: (userId: string | undefined) => ['outbound-count', userId] as const,
   searchStats: (userId: string | undefined) => ['search-stats', userId] as const,
   apiUsage: ['api-usage'] as const,
+  gmailStatus: (userId: string | undefined) => ['gmail-status', userId] as const,
+  botStats: (userId: string | undefined) => ['inbox', userId, 'bot-stats'] as const,
   jobSignals: (userId: string | undefined) => ['job-signals', userId] as const,
   jobSignalStats: (userId: string | undefined) => ['job-signal-stats', userId] as const,
   companyJobs: (companyId: string | null) => ['company-jobs', companyId] as const,

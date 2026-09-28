@@ -241,11 +241,11 @@ export function AppLayout() {
       <div className="relative z-10 min-h-screen flex flex-col flex-1">
         <header className="dark-surface px-4 sm:px-6 lg:px-10 py-3 border-b border-[#17192B] flex items-center justify-between gap-3 sm:gap-6 bg-[#17192B] text-white shadow-md">
           <div className="flex items-center gap-8 min-w-0">
-            <Link to="/dashboard" className="flex items-center gap-2.5 sm:gap-3 group min-w-0" aria-label="Lead-Scrapper dashboard">
+            <Link to="/dashboard" className="flex items-center gap-2.5 sm:gap-3 group min-w-0 flex-shrink-0" aria-label="Lead-Scrapper dashboard">
               <span className="w-9 h-9 rounded-xl bg-[#F0501E] text-white flex items-center justify-center shadow-accent group-hover:scale-105 transition-transform flex-shrink-0" aria-hidden="true">
                 <Layers className="w-5 h-5 stroke-[2.5]" />
               </span>
-              <span className="text-[19px] sm:text-[22px] font-display text-white tracking-tight truncate">Lead-Scrapper</span>
+              <span className="text-[19px] sm:text-[22px] font-display text-white tracking-tight truncate md:hidden xl:inline">Lead-Scrapper</span>
             </Link>
 
             <nav aria-label="Primary" className="hidden md:flex items-center gap-6">
@@ -254,7 +254,7 @@ export function AppLayout() {
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
-                    `relative text-[13px] transition-colors duration-150 flex items-center gap-1.5 py-1 border-b-2 ${
+                    `relative text-[13px] whitespace-nowrap transition-colors duration-150 flex items-center gap-1.5 py-1 border-b-2 ${
                       isActive ? 'text-white font-bold border-[#F0501E]' : 'text-[#A9AEBD] hover:text-white font-medium border-transparent'
                     }`
                   }
@@ -272,7 +272,7 @@ export function AppLayout() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-            <form onSubmit={handleSearchSubmit} role="search" className="relative hidden lg:block w-64">
+            <form onSubmit={handleSearchSubmit} role="search" className="relative hidden lg:block w-48 xl:w-64">
               <label htmlFor="header-lead-search" className="sr-only">Search leads</label>
               <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" aria-hidden="true" />
               <input
@@ -280,7 +280,7 @@ export function AppLayout() {
                 type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search leads, cities..."
+                placeholder="Search leads…"
                 className="quiet-input !pl-11 !pr-4 font-medium"
               />
             </form>

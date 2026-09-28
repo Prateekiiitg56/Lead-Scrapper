@@ -1,21 +1,12 @@
-import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { errorMessage } from '@/lib/utils';
 import { isOutreachAuthorized } from '@/services/permissionService';
+import { edgeFunctionError } from '@/services/edgeFunction';
+import { sendGmail } from '@/services/gmailService';
 import { normalizePhone, recordOutreach } from '@/services/leadService';
 import type { ApiUsage, ApiUsageSource, SearchLead } from '@/types/api';
 import type { EmailTemplateId } from '@/lib/constants';
 import type { Lead } from '@/types/database';
-
-const WEBHOOKS = {
-  search: import.meta.env.VITE_N8N_SEARCH_URL || '',
-  send: import.meta.env.VITE_N8N_SEND_URL || '',
-  email: import.meta.env.VITE_N8N_EMAIL_URL || '',
-  jobs: import.meta.env.VITE_N8N_JOBS_URL || '',
-  people: import.meta.env.VITE_N8N_PEOPLE_URL || '',
-  usage: import.meta.env.VITE_N8N_USAGE_URL || '',
-  lead_usage: import.meta.env.VITE_N8N_LEAD_USAGE_URL || '',
-};
 
 /** Google Places + detail lookups + website scraping in n8n routinely take 30–60s. */
 const SEARCH_TIMEOUT_MS = 120_000;
@@ -39,36 +30,42 @@ export class PermissionError extends Error {
   }
 }
 
-const NGROK_HOST = /^https?:\/\/[^/]*\.ngrok(-free)?\.(app|dev|io)(:\d+)?\//i;
+/** n8n workflows reachable through the `n8n-proxy` Edge Function. */
+export type WebhookName = 'search' | 'send' | 'jobs' | 'people' | 'usage' | 'lead_usage';
 
+const PROXY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/n8n-proxy`;
+
+/**
+ * Call an n8n workflow. Requests go through the `n8n-proxy` Edge Function, which checks the
+ * Supabase session (and the admin allowlist for sends) and holds the n8n URLs and secret.
+ */
 export async function callWebhook(
-  name: keyof typeof WEBHOOKS,
+  name: WebhookName,
   init: { method: 'GET' | 'POST'; body?: unknown },
   timeoutMs: number
 ): Promise<unknown> {
-  const url = WEBHOOKS[name];
-  if (!url) throw new WebhookError('config', `The ${name} webhook is not configured (VITE_N8N_${name.toUpperCase()}_URL).`);
-
-  const headers: Record<string, string> = {};
-  if (init.body) headers['Content-Type'] = 'application/json';
-  // ngrok's free tunnels answer browsers with an HTML warning page (no CORS headers) unless told to skip it.
-  if (NGROK_HOST.test(url)) headers['ngrok-skip-browser-warning'] = 'true';
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new WebhookError('config', 'Your session has expired. Sign in again.');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(url, {
-      method: init.method,
-      headers,
-      body: init.body ? JSON.stringify(init.body) : undefined,
+    res = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: name, payload: init.body ?? {} }),
       signal: controller.signal,
     });
   } catch (err) {
     if (controller.signal.aborted) {
       throw new WebhookError('timeout', `The ${name} service did not respond within ${Math.round(timeoutMs / 1000)}s. Try again.`);
     }
-    throw new WebhookError('network', `Could not reach the ${name} service. Check your connection or the n8n instance. (${(err as Error).message})`);
+    throw new WebhookError('network', `Could not reach the ${name} service. Check your connection, and that the n8n-proxy Edge Function is deployed. (${(err as Error).message})`);
   } finally {
     clearTimeout(timer);
   }
@@ -84,8 +81,12 @@ export async function callWebhook(
   }
 
   if (!res.ok) {
-    const msg = (json as { message?: string } | null)?.message;
-    throw new WebhookError('http', msg || `The ${name} service failed with HTTP ${res.status}.`);
+    const { error, message } = (json ?? {}) as { error?: string; message?: string };
+    if (res.status === 403) throw new PermissionError();
+    if (res.status === 404 && !error) {
+      throw new WebhookError('config', 'The "n8n-proxy" Supabase Edge Function is not deployed. See README → Edge Functions.');
+    }
+    throw new WebhookError('http', error || message || `The ${name} service failed with HTTP ${res.status}.`);
   }
   if (json === null) {
     throw new WebhookError('malformed', `The ${name} service returned an empty response. The workflow may have stopped before replying.`);
@@ -235,66 +236,29 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_RE.test(email.trim());
 }
 
-/** Send a cold email through the n8n Gmail webhook, then log it in the user's CRM. */
+/** Send a cold email from the signed-in user's own Gmail, then log it in their CRM. */
 export async function sendColdEmail(opts: {
   lead: SearchLead;
   toEmail: string;
   templateId: EmailTemplateId;
-  subject?: string;
-  body?: string;
+  subject: string;
+  body: string;
   businessType?: string;
-  user: { id: string; email?: string | null };
+  user: { id: string };
 }): Promise<OutreachResult> {
   const toEmail = opts.toEmail.trim();
   if (!isValidEmail(toEmail)) throw new WebhookError('config', 'Enter a valid recipient email address.');
+  if (!opts.subject.trim() || !opts.body.trim()) throw new WebhookError('config', 'Add a subject and a message.');
 
-  const json = (await callWebhook(
-    'email',
-    {
-      method: 'POST',
-      body: {
-        to_email: toEmail,
-        from_email: opts.user.email || '',
-        business_name: opts.lead.name,
-        address: opts.lead.address,
-        website: opts.lead.website || '',
-        template_id: opts.templateId,
-        subject: opts.subject || '',
-        custom_body: opts.body || '',
-        business_type: opts.businessType || '',
-        user_id: opts.user.id,
-      },
-    },
-    SEND_TIMEOUT_MS
-  )) as { success?: unknown; message?: unknown };
-
-  if (json.success !== true) {
-    throw new WebhookError('rejected', asString(json.message) || 'Email dispatch was not confirmed by the server.');
-  }
+  await sendGmail({ to: toEmail, subject: opts.subject.trim(), body: opts.body.trim() });
 
   return recordAfterSend(
     opts.user.id,
     { ...searchLeadToInput(opts.lead, opts.businessType), email: toEmail },
-    { message: opts.body || `Email template sent: ${opts.templateId}`, message_type: 'email', template_name: opts.templateId }
-  );
-}
+    { message: `${opts.subject.trim()}
 
-/** Pull the `{ error }` message out of a failed Edge Function call. */
-async function edgeFunctionError(error: unknown, fallback: string, fn: string): Promise<Error> {
-  if (error instanceof FunctionsHttpError) {
-    const res = error.context as Response;
-    let body: { error?: string; message?: string } | null = null;
-    try {
-      body = await res.json();
-    } catch { /* not JSON */ }
-    if (body?.error) return new Error(body.error);
-    if (res.status === 404) {
-      return new Error(`This feature needs the "${fn}" Supabase Edge Function, which is not deployed. See README → Edge Functions.`);
-    }
-    if (body?.message) return new Error(body.message);
-    return new Error(`${fallback} (HTTP ${res.status})`);
-  }
-  return new Error(error instanceof Error && error.message ? error.message : fallback);
+${opts.body.trim()}`, message_type: 'email', template_name: opts.templateId }
+  );
 }
 
 /** Draft a personalized cold email. Gemini runs server-side in the `ai-email-draft` Edge Function. */

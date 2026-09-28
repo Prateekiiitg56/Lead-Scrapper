@@ -1,5 +1,5 @@
 import { useLeads } from '@/hooks/useLeads';
-import { computeLeadStats } from '@/services/leadService';
+import { computeLeadStats, funnelReach } from '@/services/leadService';
 import { useCountUp } from '@/hooks/useCountUp';
 import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
 import { Link } from 'react-router-dom';
@@ -11,11 +11,16 @@ import {
   Calendar,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/queryClient';
+import { fetchBotStats } from '@/services/conversationService';
 import { timeAgo } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { isOutreachAuthorized } from '@/services/permissionService';
 
 function StatTickMarks({ count, colorClass }: { count: number; colorClass: string }) {
   const barsCount = 14;
-  const activeBars = Math.min(Math.max(Math.round((count / 50) * barsCount), 2), barsCount);
+  const activeBars = count > 0 ? Math.min(Math.max(Math.round((count / 50) * barsCount), 1), barsCount) : 0;
 
   return (
     <div className="flex items-center gap-1 pt-3">
@@ -34,17 +39,33 @@ function StatTickMarks({ count, colorClass }: { count: number; colorClass: strin
 export function DashboardPage() {
   const { leads: realLeads, loading: leadsLoading, error } = useLeads();
   const [range, setRange] = useState<'month' | 'all'>('month');
+  const { user } = useAuth();
+  const userName: string = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'You';
+  const canSend = isOutreachAuthorized(user?.email);
 
-  // "This month" counts leads created since the 1st of the current month.
+  // "This month" counts leads with any activity since the 1st: added, contacted or replied.
+  // Filtering on created_at alone hid older leads that were worked this month.
   const s = useMemo(() => {
     if (range === 'all') return computeLeadStats(realLeads);
     const start = new Date();
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
-    return computeLeadStats(realLeads.filter((l) => new Date(l.created_at) >= start));
+    const since = start.getTime();
+    const activeSince = (t: string | null) => !!t && new Date(t).getTime() >= since;
+    return computeLeadStats(
+      realLeads.filter((l) => activeSince(l.created_at) || activeSince(l.last_contact_at) || activeSince(l.last_reply_at))
+    );
   }, [realLeads, range]);
 
-  const replyRate = s.contacted > 0 ? Math.round((s.replied / s.contacted) * 100) : (s.replied > 0 ? 100 : 0);
+  const bot = useQuery({
+    queryKey: queryKeys.botStats(user?.id),
+    queryFn: () => fetchBotStats(user!.id),
+    enabled: !!user?.id,
+  });
+  const botActive = !!bot.data?.lastInboundAt && Date.now() - new Date(bot.data.lastInboundAt).getTime() < 7 * 86_400_000;
+
+  const reach = funnelReach(s);
+  const replyRate = reach.contacted > 0 ? Math.round((reach.replied / reach.contacted) * 100) : 0;
   const convRate  = s.total > 0 ? Math.round(((s.interested + s.meeting_booked + s.client) / s.total) * 100) : 0;
 
   const animatedConvRate = useCountUp(convRate);
@@ -85,7 +106,7 @@ export function DashboardPage() {
                     Lead Outreach Tracker
                   </h2>
                   <span className="badge-target font-mono">
-                    +{animatedConvRate}% Efficiency
+                    {animatedConvRate}% converted
                   </span>
                 </div>
                 <p className="text-[13px] text-[#4B5264] font-medium mt-1 max-w-md leading-normal font-sans">
@@ -132,7 +153,7 @@ export function DashboardPage() {
                   </div>
                   {/* Stage Pill Button */}
                   <div
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
                       item.active
                         ? 'bg-[#17192B] text-white shadow-xs font-mono'
                         : 'bg-white text-[#4B5264] border border-[#D1D5DB] hover:bg-slate-50 font-mono'
@@ -148,7 +169,7 @@ export function DashboardPage() {
           {/* Compact Stat Summary Row */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[12px] text-[#374151] font-medium font-mono">
             <span>Overall DB Contacts: <strong className="text-[#14161A]">{s.total}</strong></span>
-            <span>Total Replies: <strong className="text-[#14161A]">{s.replied}</strong></span>
+            <span>Total Replies: <strong className="text-[#14161A]">{reach.replied}</strong></span>
             <span>Closed Deals: <strong className="text-[#14161A]">{s.client}</strong></span>
           </div>
         </div>
@@ -260,16 +281,16 @@ export function DashboardPage() {
             <div className="bg-[#e8eaf0] border border-[#d1d5db] rounded-[20px] p-3.5 flex items-center justify-between shadow-xs hover:border-[#F0501E]/40 transition-all text-[#14161A]">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full bg-[#17192B] text-white font-bold text-xs flex items-center justify-center flex-shrink-0 font-mono">
-                  AD
+                  {userName.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-bold text-[#14161A] truncate">Admin User</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-[#F0501E] text-white">
-                      Superadmin
+                    <span className="text-[13px] font-bold text-[#14161A] truncate">{userName}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold text-white ${canSend ? 'bg-[#F0501E]' : 'bg-[#4B5264]'}`}>
+                      {canSend ? 'Admin' : 'Viewer'}
                     </span>
                   </div>
-                  <div className="text-[11px] text-[#374151] font-semibold truncate mt-0.5">n8n Workflow Manager</div>
+                  <div className="text-[11px] text-[#374151] font-semibold truncate mt-0.5">{canSend ? 'Can send outreach' : 'Outreach needs admin access'}</div>
                 </div>
               </div>
               <Link
@@ -290,11 +311,19 @@ export function DashboardPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-bold text-[#14161A] truncate">WhatsApp Bot</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-[#5B8DEF] text-white">
-                      Automated
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold text-white ${botActive ? 'bg-[#5B8DEF]' : 'bg-[#4B5264]'}`}>
+                      {bot.isPending ? '…' : botActive ? 'Active' : 'Idle'}
                     </span>
                   </div>
-                  <div className="text-[11px] text-[#374151] font-semibold truncate mt-0.5">Auto-reply & AI Classifier</div>
+                  <div className="text-[11px] text-[#374151] font-semibold truncate mt-0.5">
+                    {bot.isError
+                      ? 'Activity unavailable'
+                      : bot.data
+                        ? bot.data.lastInboundAt
+                          ? `${bot.data.repliesThisMonth} replies this month · ${bot.data.classifiedThisMonth} AI-classified · last ${timeAgo(bot.data.lastInboundAt).toLowerCase()}`
+                          : 'No inbound replies yet'
+                        : 'Loading activity…'}
+                  </div>
                 </div>
               </div>
               <Link
@@ -345,15 +374,15 @@ export function DashboardPage() {
               {/* Group 1: Contacted */}
               <div>
                 <div className="text-[11px] text-[#374151] font-bold">Contacted</div>
-                <div className="text-3xl font-bold text-[#14161A] mt-1 font-sans">{s.contacted}</div>
-                <StatTickMarks count={s.contacted} colorClass="bg-[#5B8DEF]" />
+                <div className="text-3xl font-bold text-[#14161A] mt-1 font-sans">{reach.contacted}</div>
+                <StatTickMarks count={reach.contacted} colorClass="bg-[#5B8DEF]" />
               </div>
 
               {/* Group 2: Replied */}
               <div>
                 <div className="text-[11px] text-[#374151] font-bold">Replied</div>
-                <div className="text-3xl font-bold text-[#B93A0E] mt-1 font-sans">{s.replied}</div>
-                <StatTickMarks count={s.replied} colorClass="bg-[#F0501E]" />
+                <div className="text-3xl font-bold text-[#B93A0E] mt-1 font-sans">{reach.replied}</div>
+                <StatTickMarks count={reach.replied} colorClass="bg-[#F0501E]" />
               </div>
 
               {/* Group 3: Clients Won */}

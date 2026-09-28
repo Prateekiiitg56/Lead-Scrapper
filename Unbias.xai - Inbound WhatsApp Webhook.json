@@ -23,7 +23,9 @@
         "httpMethod": "POST",
         "path": "unbias-wa-inbound",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {
+          "rawBody": true
+        }
       },
       "id": "be61cdc9-53d9-4986-b5b4-947329d8f90c",
       "name": "WhatsApp Webhook (POST Messages)",
@@ -34,7 +36,7 @@
         208
       ],
       "webhookId": "unbias-wa-inbound-post",
-      "notes": "Receives inbound WhatsApp customer messages and delivery status updates."
+      "notes": "Receives inbound WhatsApp messages and status updates. Raw Body is on so the Meta signature can be verified."
     },
     {
       "parameters": {
@@ -219,7 +221,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -342,6 +344,101 @@
         112
       ],
       "notes": "Returns 200 OK to Meta."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta signs the exact request bytes, so verify against the raw body, not re-serialized JSON.\nconst item = $input.first();\nconst raw = item.binary?.data ? (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8') : '';\nlet body = {};\ntry { body = JSON.parse(raw); } catch (e) { body = {}; }\nconst headers = item.json.headers || {};\nreturn [{ json: {\n  raw_body: raw,\n  signature: String(headers['x-hub-signature-256'] || ''),\n  body,\n  query: item.json.query || {},\n} }];"
+      },
+      "id": "c1d6f0a2-5b7e-4d3a-9f21-7a0e4b6c9d11",
+      "name": "Extract Raw Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        416
+      ],
+      "notes": "Reads the raw POST body and the X-Hub-Signature-256 header."
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.raw_body }}",
+        "dataPropertyName": "expected_signature",
+        "secret": "YOUR_META_APP_SECRET",
+        "encoding": "hex"
+      },
+      "id": "d2e7a1b3-6c8f-4e4b-8a32-8b1f5c7d0e22",
+      "name": "Compute Signature",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        448,
+        416
+      ],
+      "notes": "PASTE YOUR META APP SECRET HERE (Meta App Dashboard → App settings → Basic → App secret). HMAC-SHA256 of the raw body."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sig-present",
+              "leftValue": "={{ $json.signature }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "sig-match",
+              "leftValue": "={{ $json.signature }}",
+              "rightValue": "={{ 'sha256=' + $json.expected_signature }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e3f8b2c4-7d9a-4f5c-9b43-9c2a6d8e1f33",
+      "name": "Signature Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        672,
+        416
+      ],
+      "notes": "True: genuine Meta request, continue. False: reject with 401."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Invalid signature",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "f4a9c3d5-8e0b-4a6d-8c54-0d3b7e9f2a44",
+      "name": "Respond Invalid Signature",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        896,
+        512
+      ],
+      "notes": "Requests without a valid Meta signature never reach the CRM."
     }
   ],
   "pinData": {},
@@ -361,7 +458,7 @@
       "main": [
         [
           {
-            "node": "Parse Webhook Payload",
+            "node": "Extract Raw Body",
             "type": "main",
             "index": 0
           }
@@ -464,6 +561,46 @@
         [
           {
             "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Raw Body": {
+      "main": [
+        [
+          {
+            "node": "Compute Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Signature": {
+      "main": [
+        [
+          {
+            "node": "Signature Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature Valid?": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid Signature",
             "type": "main",
             "index": 0
           }

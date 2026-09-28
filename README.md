@@ -12,7 +12,7 @@ A modern, high-efficiency B2B sales automation platform for lead discovery, cont
 - **Target Lead Identification**: Automatically flag high-opportunity targets (e.g., businesses lacking websites) for specialized pitch campaigns.
 - **Multi-Channel Outreach**:
   - **WhatsApp**: Direct webhook-triggered WhatsApp messaging via n8n integration.
-  - **Gmail / Email**: Direct email dispatch with template selection and AI personalized generation (Gemini).
+  - **Gmail / Email**: Emails go out from each user's own Gmail account, with editable templates and AI personalized drafts (Gemini).
   - **LinkedIn**: One-click profile deep-linking and search lookup.
 - **Real-Time CRM Pipeline**: Manage prospects through an 8-stage funnel (`NEW`, `CONTACTED`, `REPLIED`, `INTERESTED`, `FOLLOW_UP`, `MEETING_BOOKED`, `CLIENT`, `LOST`) with interest scoring, custom notes, and a slide-over details panel.
 - **Live Conversation Inbox**: Interactive two-way WhatsApp message threads with automated AI sentiment classification, intent detection, and quick-reply action chips.
@@ -67,12 +67,9 @@ Copy `.env.example` to `.env.local` and fill it in. Only public values belong th
 | Variable | Purpose |
 |---|---|
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Supabase project (anon key only — never the service-role key) |
-| `VITE_N8N_SEARCH_URL` | n8n `unbias-lead-search` webhook |
-| `VITE_N8N_SEND_URL` | n8n `unbias-send-message` webhook (WhatsApp templates) |
-| `VITE_N8N_EMAIL_URL` | n8n `unbias-send-email` webhook |
-| `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` | n8n job search and people lookup webhooks (Job Signals page) |
-| `VITE_N8N_USAGE_URL`, `VITE_N8N_LEAD_USAGE_URL` | n8n `unbias-api-usage` (Job Signals) and `unbias-lead-api-usage` (Lead Gen) webhooks: today's third-party API calls for the header gauge |
-| `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions (not a security boundary). Unset = nobody can send |
+| `VITE_ADMIN_EMAIL`, `VITE_AUTHORIZED_ADMIN_EMAILS` | UI gating of WhatsApp actions and AI email drafting (not a security boundary). Unset = nobody |
+
+n8n webhook URLs are **not** frontend variables any more. The browser calls the `n8n-proxy` Edge Function, which holds the URLs as Supabase secrets (Step 4). Remove any old `VITE_N8N_*` entries from `.env.local` and Vercel.
 
 ### Step 3: Database
 Run in the Supabase SQL editor, in order:
@@ -81,18 +78,57 @@ Run in the Supabase SQL editor, in order:
 3. `supabase/fix_rls_policies.sql` — per-user ownership (`leads.assigned_user_id = auth.uid()`).
 4. `supabase/migrations/003_harden_users_rls.sql` — removes the permissive `users`/`followups`/`templates`/`analytics` policies from 001.
 5. `supabase/migrations/004_job_signals.sql` — Job Signals tables (`companies`, `job_openings`, `people`, `job_people`, `signals`), each owned per user through RLS. The rest of the app works without it; the Job Signals page shows a "missing Job Signals tables" error until it is applied.
+6. `supabase/migrations/005_claim_unassigned_leads.sql` — lets a user claim a lead row n8n created without an owner.
+7. `supabase/migrations/006_gmail_connections.sql` — per-user Gmail connections for email outreach (encrypted refresh tokens; no browser access).
 
 ### Step 4: Edge Functions (server-side secrets)
-Inbox WhatsApp replies and AI email drafting call Meta and Gemini with secret keys, so they run as Supabase Edge Functions instead of in the browser:
+Everything that needs a secret or costs money runs in a Supabase Edge Function. Each one verifies the caller's Supabase JWT.
+
+| Function | Purpose | Who may call |
+|---|---|---|
+| `n8n-proxy` | Only path from the browser to n8n (search, WhatsApp template send, job search, people lookup, API usage). Adds the `X-Webhook-Secret` header and sets `user_id` / `user_email` from the session | Any signed-in user; `send` only for `AUTHORIZED_ADMIN_EMAILS` |
+| `gmail` | Connect Gmail and send cold emails from the user's own account | Any signed-in user, only as themselves |
+| `whatsapp-send-text` | Inbox WhatsApp replies (Meta API) | `AUTHORIZED_ADMIN_EMAILS` |
+| `ai-email-draft` | Gemini email drafts | `AUTHORIZED_ADMIN_EMAILS` |
 
 ```bash
+supabase functions deploy n8n-proxy
+supabase functions deploy gmail
 supabase functions deploy whatsapp-send-text
 supabase functions deploy ai-email-draft
+
+supabase secrets set AUTHORIZED_ADMIN_EMAILS=you@example.com   # required allowlist (unset = nobody)
 supabase secrets set META_ACCESS_TOKEN=... META_PHONE_NUMBER_ID=... GEMINI_API_KEY=...
-supabase secrets set AUTHORIZED_ADMIN_EMAILS=you@example.com   # required allowlist for WhatsApp replies (unset = nobody)
+
+# n8n-proxy: one random secret shared with n8n, plus the webhook URLs
+supabase secrets set N8N_WEBHOOK_SECRET=$(openssl rand -hex 32)
+supabase secrets set N8N_SEARCH_URL=https://your-n8n/webhook/unbias-lead-search \
+  N8N_SEND_URL=https://your-n8n/webhook/unbias-send-message \
+  N8N_JOBS_URL=https://your-n8n/webhook/unbias-job-search \
+  N8N_PEOPLE_URL=https://your-n8n/webhook/unbias-find-people \
+  N8N_USAGE_URL=https://your-n8n/webhook/unbias-api-usage \
+  N8N_LEAD_USAGE_URL=https://your-n8n/webhook/unbias-lead-api-usage
+
+# gmail: the same Google OAuth client as Supabase Auth → Google, and a key that encrypts stored tokens
+supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... GMAIL_TOKEN_KEY=$(openssl rand -hex 32)
 ```
 
-Both verify the caller's Supabase JWT and act through RLS. `whatsapp-send-text` reads the phone number from the caller's own lead, never from the request. Until deployed, those two buttons show a "function is not deployed" error; everything else works.
+`whatsapp-send-text` reads the phone number from the caller's own lead, never from the request. Until a function is deployed, its feature shows a "not deployed" error; everything else works.
+
+#### Securing the n8n webhooks
+Every n8n webhook the app uses now requires **Header Auth**. In n8n, create one credential of type **Header Auth** named `Lead-Scrapper webhook secret`: header name `X-Webhook-Secret`, value = your `N8N_WEBHOOK_SECRET`. After importing the workflows, select that credential on each Webhook node marked "Header Auth" (Lead Gen: search, send, stats, API usage; Job Signals: jobs, people, API usage). A request without the secret gets HTTP 403 from n8n.
+
+The old `Unbias.xai - Cold Email Outreach` workflow is no longer called (email now goes through the `gmail` function). **Deactivate it in n8n.** Its webhook is also locked behind Header Auth in case it stays active.
+
+#### Verifying Meta's webhook signature
+`Unbias.xai - Inbound WhatsApp Webhook` checks `X-Hub-Signature-256` on every POST before the payload reaches the CRM. The POST Webhook node keeps the raw body. `Compute Signature` calculates HMAC-SHA256 of that body, and `Signature Valid?` compares it with the header. A mismatch gets HTTP 401. Paste your **Meta App Secret** (Meta App Dashboard → App settings → Basic) into the `secret` field of `Compute Signature`. Until you do, every inbound message is rejected. The GET verification challenge is unchanged.
+
+#### Gmail sending (per user)
+Cold emails go out from the signed-in user's own Gmail account, never a shared one:
+1. Google Cloud Console → the OAuth client used by Supabase Auth → **OAuth consent screen**: add the scope `https://www.googleapis.com/auth/gmail.send`. It is a sensitive scope: in **Testing** mode add each user as a test user. For public use, submit the app for Google verification.
+2. Supabase → Authentication → Providers → Google must use that client. Enable **Manual linking** (Authentication → Settings) so email/password users can link Google.
+3. "Sign in with Google" now asks for Gmail send permission. The app stores the refresh token (encrypted) through the `gmail` function. Email/password users press **Connect Gmail** in the Email dialog.
+4. The connected Google account must be the same address the user signs in with. A different account is refused.
 
 **Rotate** any Meta token or Gemini key that was previously in `VITE_META_ACCESS_TOKEN` / `VITE_GEMINI_API_KEY`: earlier builds embedded them in public JavaScript.
 
@@ -211,7 +247,9 @@ Lead-Scrapper/
 
 Verified against the exported workflows in this repo.
 
-### Lead search — `POST VITE_N8N_SEARCH_URL`
+All calls below arrive from the `n8n-proxy` Edge Function with the `X-Webhook-Secret` header. For POST calls the proxy overwrites `user_id` and `user_email` with the verified session values.
+
+### Lead search — `POST N8N_SEARCH_URL`
 ```json
 { "business_type": "Restaurant", "business_type_other": "", "location": "Guwahati, Assam" }
 ```
@@ -225,25 +263,22 @@ The workflow drops places without a phone. The client hides businesses the signe
 
 The cache and counters live in the workflow's static data, which n8n saves only for production (active) runs.
 
-### WhatsApp template — `POST VITE_N8N_SEND_URL`
+### WhatsApp template — `POST N8N_SEND_URL` (admins only)
 ```json
 { "name": "Bay Area Dental", "phone": "+14155552671", "address": "...", "website": "", "template_name": "website_automation_pitch_v2" | "first_outreach", "user_id": "<auth uid>" }
 ```
 Response: `{ "success": true|false, "message": "..." }`. Only `success: true` counts as sent. The client then saves the lead to the caller's CRM (status `CONTACTED`, never downgrading a later stage) and logs the conversation.
 
-### Email — `POST VITE_N8N_EMAIL_URL`
-```json
-{ "to_email": "...", "from_email": "...", "business_name": "...", "address": "...", "website": "", "template_id": "website_pitch_email", "subject": "", "custom_body": "", "business_type": "", "user_id": "<auth uid>" }
-```
-Response: `{ "success": true, "message": "sent" }`, or HTTP 400 `{ "success": false, "message": "Email address is required" }`.
+### Email — `gmail` Edge Function (not n8n)
+The Email dialog fills the chosen template in the browser (`EMAIL_TEMPLATES` in `src/lib/constants.ts`), or drafts it with Gemini for admins, and the user can edit it. `POST /functions/v1/gmail` with `{ "action": "send", "to", "subject", "body" }` sends it through the Gmail API as the signed-in user. Response: `{ "ok": true, "id", "from" }`, or HTTP 409 `{ "code": "gmail_not_connected" }` when the user must connect or reconnect Gmail.
 
-### Job search — `POST VITE_N8N_JOBS_URL`
+### Job search — `POST N8N_JOBS_URL`
 ```json
 { "query": "automation jobs in USA", "keywords": "automation", "location": "USA", "remote": true, "user_id": "<auth uid>", "user_email": "<login email>" }
 ```
 Response: `{ "success": true, "jobs": [ { "id", "title", "company": { "name", "location" }, "location", "description", "url", "posted_at", "source" } ], "dropped": { "agency": 2, "scam": 1, ... }, "warnings": [] }` (a bare array also works; `company` may also be a plain name). `posted_at` accepts ISO dates or text like `"3 days ago"`. The client scores each opening HIGH / MEDIUM / LOW by keyword matches (`src/lib/signalScoring.ts`; title hits count double) and stores companies, openings and signals in Supabase.
 
-### People lookup — `POST VITE_N8N_PEOPLE_URL`
+### People lookup — `POST N8N_PEOPLE_URL`
 ```json
 { "company": "Acme GmbH", "website": "", "linkedin_url": "", "location": "Berlin, Germany", "roles": ["Founder/CEO", "COO"] }
 ```
@@ -282,7 +317,7 @@ Setup:
      `{ "qs": { "app_id": "<id>", "app_key": "<key>" } }`
    - **Companies House** (optional, UK) — type **Basic Auth**, user = API key from developer.company-information.service.gov.uk, empty password, on both `Companies House` nodes.
    - **SerpApi** (optional) — type **Query Auth**, name `api_key`, on `Google Jobs Search` and `SerpApi LinkedIn Profiles`.
-4. Activate and copy the production URLs of `Job Search Webhook`, `People Webhook` and `API Usage Webhook` into `VITE_N8N_JOBS_URL`, `VITE_N8N_PEOPLE_URL` and `VITE_N8N_USAGE_URL`.
+4. Select the `Lead-Scrapper webhook secret` Header Auth credential on the three Webhook nodes. Activate, and set the production URLs of `Job Search Webhook`, `People Webhook` and `API Usage Webhook` as the `N8N_JOBS_URL`, `N8N_PEOPLE_URL` and `N8N_USAGE_URL` Supabase secrets.
 
 **API usage** — the workflow counts its calls to each third-party source per UTC day in static data (production runs only) and `GET unbias-api-usage` returns `{ "success": true, "day", "reset_at", "sources": [ { "name", "calls", "daily_limit", "note" } ] }`. The gauge icon in the app header shows these counts and turns amber at 80% of a daily limit, red at 100%. Set each plan's daily limit in `SOURCES` in the `Report API Usage` node (`null` = no daily cap).
 

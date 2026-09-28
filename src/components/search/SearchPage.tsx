@@ -14,6 +14,7 @@ import {
 } from '@/services/searchService';
 import { normalizePhone, normalizeEmail, saveLeadForUser } from '@/services/leadService';
 import { fetchOutreachStats } from '@/services/conversationService';
+import { fetchGmailStatus, isGmailNotConnected, startGmailConnect } from '@/services/gmailService';
 import { BUSINESS_TYPES, EMAIL_TEMPLATES, STATUS_LABELS, type EmailTemplateId } from '@/lib/constants';
 import { queryKeys } from '@/lib/queryClient';
 import { errorMessage, timeAgo, toExternalUrl } from '@/lib/utils';
@@ -29,6 +30,31 @@ import type { Lead } from '@/types/database';
 
 type Channel = 'whatsapp' | 'email' | 'linkedin';
 type ChipFilter = 'all' | 'no_website' | 'has_website';
+
+interface SavedSearch {
+  query: { type: string; location: string };
+  result: SearchResult;
+}
+
+/**
+ * The last search is kept for the tab session, per user, so leaving the page does not throw
+ * away results that cost Google Places calls to produce.
+ */
+function readSavedSearch(key: string): SavedSearch | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    const saved = raw ? (JSON.parse(raw) as SavedSearch) : null;
+    return Array.isArray(saved?.result?.leads) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedSearch(key: string, saved: SavedSearch) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(saved));
+  } catch { /* storage unavailable or full */ }
+}
 
 function leadKey(lead: SearchLead): string {
   return lead.place_id || normalizePhone(lead.phone) || `${lead.name}|${lead.address}`.toLowerCase();
@@ -278,14 +304,33 @@ function WhatsAppDialog({ lead, businessType, onClose, onSent, onPermission }: {
 
 function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead; businessType: string; onClose: () => void; onSent: (r: OutreachResult, email: string) => void }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const id = useId();
+  // AI drafting spends the owner's Gemini quota, so it stays with admin accounts.
+  const canUseAI = isOutreachAuthorized(user?.email);
+  const templates = EMAIL_TEMPLATES.filter((t) => t.render || canUseAI);
+  const senderName: string = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
+  const fill = (tplId: EmailTemplateId) =>
+    EMAIL_TEMPLATES.find((t) => t.id === tplId)?.render?.({ businessName: lead.name, address: lead.address, website: lead.website, senderName });
+
   const [toEmail, setToEmail] = useState(lead.email || '');
-  const [templateId, setTemplateId] = useState<EmailTemplateId>(EMAIL_TEMPLATES[0].id);
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [templateId, setTemplateId] = useState<EmailTemplateId>(
+    canUseAI ? 'ai_personalized_email' : lead.has_website ? 'automation_pitch_email' : 'website_pitch_email'
+  );
+  const [subject, setSubject] = useState(() => fill(templateId)?.subject ?? '');
+  const [body, setBody] = useState(() => fill(templateId)?.body ?? '');
   const [touched, setTouched] = useState(false);
   const isAI = templateId === 'ai_personalized_email';
   const emailInvalid = !isValidEmail(toEmail);
+
+  const gmailKey = queryKeys.gmailStatus(user?.id);
+  const gmail = useQuery({ queryKey: gmailKey, queryFn: fetchGmailStatus, enabled: !!user });
+  const connect = useMutation({
+    mutationFn: async () => {
+      const err = await startGmailConnect(user!);
+      if (err) throw err;
+    },
+  });
 
   const draft = useMutation({
     mutationFn: () => generateAIEmail({ businessName: lead.name, businessType, address: lead.address, website: lead.website || undefined }),
@@ -296,21 +341,16 @@ function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead
   });
 
   const send = useMutation({
-    mutationFn: () =>
-      sendColdEmail({
-        lead,
-        toEmail,
-        templateId: isAI ? 'first_outreach_email' : templateId,
-        subject: isAI ? subject : undefined,
-        body: isAI ? body : undefined,
-        businessType,
-        user: user!,
-      }),
+    mutationFn: () => sendColdEmail({ lead, toEmail, templateId, subject, body, businessType, user: user! }),
     onSuccess: (r) => onSent(r, toEmail.trim()),
+    onError: (err) => {
+      if (isGmailNotConnected(err)) queryClient.setQueryData(gmailKey, { connected: false, email: null, error: err.message });
+    },
   });
 
-  const aiReady = !isAI || (subject.trim() && body.trim());
-  const busy = send.isPending || draft.isPending;
+  const connected = !!gmail.data?.connected;
+  const ready = connected && !!subject.trim() && !!body.trim();
+  const busy = send.isPending || draft.isPending || connect.isPending;
 
   return (
     <OutreachModal
@@ -321,14 +361,14 @@ function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead
       businessName={lead.name}
       footer={
         <>
-          <button type="button" onClick={onClose} disabled={send.isPending} className="btn-ghost">Cancel</button>
+          <button type="button" onClick={onClose} disabled={busy} className="btn-ghost">Cancel</button>
           <button
             type="button"
             onClick={() => {
               setTouched(true);
-              if (!emailInvalid && aiReady) send.mutate();
+              if (!emailInvalid && ready) send.mutate();
             }}
-            disabled={busy || !aiReady}
+            disabled={busy || !ready}
             className="btn-primary"
           >
             {send.isPending ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Mail className="w-4 h-4" aria-hidden="true" />}
@@ -338,6 +378,32 @@ function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead
       }
     >
       <div className="space-y-5">
+        {gmail.isPending ? (
+          <p className="text-[12px] text-[#4B5264] flex items-center gap-2" role="status">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Checking your Gmail connection…
+          </p>
+        ) : gmail.isError ? (
+          <ErrorNote>{errorMessage(gmail.error)}</ErrorNote>
+        ) : connected ? (
+          <p className="text-[12px] text-[#374151] font-medium flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" aria-hidden="true" />
+            Sending from <span className="font-mono font-bold text-[#14161A]">{gmail.data.email}</span>
+          </p>
+        ) : (
+          <div className="bg-[#F8F9FC] border border-[#E2E8F0] rounded-[16px] p-4 space-y-3">
+            <p className="text-[13px] text-[#374151] leading-relaxed">
+              Emails are sent from your own Gmail account (<span className="font-mono font-bold text-[#14161A]">{user?.email}</span>).
+              Connect it once to allow sending.
+            </p>
+            {gmail.data?.error && <ErrorNote>{gmail.data.error}</ErrorNote>}
+            {connect.isError && <ErrorNote>{errorMessage(connect.error)}</ErrorNote>}
+            <button type="button" onClick={() => connect.mutate()} disabled={connect.isPending} className="btn-secondary w-full">
+              {connect.isPending ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <GmailLogo />}
+              Connect Gmail
+            </button>
+          </div>
+        )}
+
         <div>
           <FieldLabel htmlFor={`${id}-to`}>Recipient email</FieldLabel>
           <input
@@ -363,18 +429,21 @@ function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead
             id={`${id}-tpl`}
             value={templateId}
             onChange={(e) => {
-              setTemplateId(e.target.value as EmailTemplateId);
+              const next = e.target.value as EmailTemplateId;
+              setTemplateId(next);
               draft.reset();
+              const filled = fill(next);
+              setSubject(filled?.subject ?? '');
+              setBody(filled?.body ?? '');
             }}
             className="ui-input text-[13px] cursor-pointer"
           >
-            {EMAIL_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
-          {!isAI && <p className="text-[12px] text-[#4B5264] mt-1.5">The n8n email workflow fills this template with the business details.</p>}
         </div>
 
-        {isAI && (
-          <div className="space-y-4">
+        <div className="space-y-4">
+          {isAI && (
             <button
               type="button"
               onClick={() => draft.mutate()}
@@ -384,19 +453,19 @@ function EmailDialog({ lead, businessType, onClose, onSent }: { lead: SearchLead
               {draft.isPending && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
               {draft.isPending ? 'Drafting…' : body ? 'Redraft with AI' : 'Draft with AI'}
             </button>
-            {draft.isError && <ErrorNote>{errorMessage(draft.error)}</ErrorNote>}
-            <div>
-              <FieldLabel htmlFor={`${id}-subject`}>Subject</FieldLabel>
-              <input id={`${id}-subject`} type="text" value={subject} onChange={(e) => setSubject(e.target.value)} className="ui-input font-bold text-[13px]" placeholder="Draft with AI or write your own" />
-            </div>
-            <div>
-              <FieldLabel htmlFor={`${id}-body`}>Body</FieldLabel>
-              <textarea id={`${id}-body`} value={body} onChange={(e) => setBody(e.target.value)} rows={7} className="ui-input text-[13px] leading-relaxed resize-y" placeholder="Draft with AI or write your own" />
-            </div>
+          )}
+          {draft.isError && <ErrorNote>{errorMessage(draft.error)}</ErrorNote>}
+          <div>
+            <FieldLabel htmlFor={`${id}-subject`}>Subject</FieldLabel>
+            <input id={`${id}-subject`} type="text" value={subject} onChange={(e) => setSubject(e.target.value)} className="ui-input font-bold text-[13px]" placeholder={isAI ? 'Draft with AI or write your own' : 'Subject'} />
           </div>
-        )}
+          <div>
+            <FieldLabel htmlFor={`${id}-body`}>Message</FieldLabel>
+            <textarea id={`${id}-body`} value={body} onChange={(e) => setBody(e.target.value)} rows={9} className="ui-input text-[13px] leading-relaxed resize-y" placeholder={isAI ? 'Draft with AI or write your own' : 'Message'} />
+          </div>
+        </div>
 
-        {send.isError && <ErrorNote>{errorMessage(send.error)}</ErrorNote>}
+        {send.isError && !isGmailNotConnected(send.error) && <ErrorNote>{errorMessage(send.error)}</ErrorNote>}
       </div>
     </OutreachModal>
   );
@@ -468,11 +537,15 @@ export function SearchPage() {
   const queryClient = useQueryClient();
   const { leads: crmLeads } = useLeads();
   const formId = useId();
-  const [businessType, setBusinessType] = useState<string>(BUSINESS_TYPES[0]);
-  const [businessTypeOther, setBusinessTypeOther] = useState('');
-  const [location, setLocation] = useState('');
+  const savedSearchKey = `lead-search:${user?.id}`;
+  const [savedSearch] = useState(() => readSavedSearch(savedSearchKey));
+  const savedType = savedSearch?.query.type;
+  const savedIsPreset = !!savedType && (BUSINESS_TYPES as readonly string[]).includes(savedType);
+  const [businessType, setBusinessType] = useState<string>(savedType ? (savedIsPreset ? savedType : 'Other') : BUSINESS_TYPES[0]);
+  const [businessTypeOther, setBusinessTypeOther] = useState(savedType && !savedIsPreset ? savedType : '');
+  const [location, setLocation] = useState(savedSearch?.query.location ?? '');
   const [formError, setFormError] = useState<string | null>(null);
-  const [lastQuery, setLastQuery] = useState<{ type: string; location: string } | null>(null);
+  const [lastQuery, setLastQuery] = useState<{ type: string; location: string } | null>(savedSearch?.query ?? null);
   const [filterChip, setFilterChip] = useState<ChipFilter>('all');
   const [active, setActive] = useState<{ lead: SearchLead; channel: Channel } | null>(null);
   const [showPermission, setShowPermission] = useState(false);
@@ -492,6 +565,8 @@ export function SearchPage() {
 
   const search = useMutation<SearchResult, Error, { type: string; other: string; location: string }>({
     mutationFn: ({ type, other, location: loc }) => searchLeads(type, other, loc),
+    onSuccess: (result, vars) =>
+      writeSavedSearch(savedSearchKey, { query: { type: vars.type === 'Other' ? vars.other : vars.type, location: vars.location }, result }),
     onMutate: () => {
       setFilterChip('all');
       setNotice(null);
@@ -581,7 +656,8 @@ export function SearchPage() {
     const crm = findCrmLead(lead);
     return !!crm && (crm.status !== 'NEW' || !!crm.last_contact_at) && !contacted[leadKey(lead)];
   };
-  const allResults = search.data?.leads ?? null;
+  const searchData = search.data ?? (search.isIdle ? savedSearch?.result : undefined);
+  const allResults = searchData?.leads ?? null;
   const results = allResults?.filter((l) => !wasContacted(l)) ?? null;
   const alreadyContacted = (allResults?.length ?? 0) - (results?.length ?? 0);
   const noWebsite = results?.filter((l) => !l.has_website).length ?? 0;
@@ -698,16 +774,16 @@ export function SearchPage() {
                     <h2 className="text-[15px] font-bold text-[#14161A]" aria-live="polite">
                       {results.length} {results.length === 1 ? 'lead' : 'leads'} found
                     </h2>
-                    {(search.data!.duplicates > 0 || search.data!.invalid > 0 || alreadyContacted > 0) && (
+                    {(searchData!.duplicates > 0 || searchData!.invalid > 0 || alreadyContacted > 0) && (
                       <p className="text-[12px] text-[#4B5264]">
                         {alreadyContacted > 0 && `${alreadyContacted} already contacted from your CRM hidden. `}
-                        {search.data!.duplicates > 0 && `${search.data!.duplicates} duplicate${search.data!.duplicates > 1 ? 's' : ''} removed. `}
-                        {search.data!.invalid > 0 && `${search.data!.invalid} incomplete result${search.data!.invalid > 1 ? 's' : ''} skipped.`}
+                        {searchData!.duplicates > 0 && `${searchData!.duplicates} duplicate${searchData!.duplicates > 1 ? 's' : ''} removed. `}
+                        {searchData!.invalid > 0 && `${searchData!.invalid} incomplete result${searchData!.invalid > 1 ? 's' : ''} skipped.`}
                       </p>
                     )}
-                    {search.data!.cachedAt && (
+                    {searchData!.cachedAt && (
                       <p className="text-[12px] text-[#4B5264]">
-                        Cached Google Places results, fetched {timeAgo(search.data!.cachedAt).toLowerCase()}.
+                        Cached Google Places results, fetched {timeAgo(searchData!.cachedAt).toLowerCase()}.
                       </p>
                     )}
                   </div>

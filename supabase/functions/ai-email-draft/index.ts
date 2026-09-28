@@ -1,5 +1,5 @@
 // Drafts a personalized cold email with Gemini. The API key stays server-side.
-import { authenticate, HttpError, json, requireEnv, serve } from '../_shared/http.ts';
+import { assertOutreachAllowed, authenticate, HttpError, json, requireEnv, serve } from '../_shared/http.ts';
 
 /** Collapse whitespace and cap length so user-supplied fields cannot reshape the prompt. */
 function clean(value: unknown, max: number): string {
@@ -24,7 +24,9 @@ async function generate(prompt: string, maxOutputTokens: number): Promise<string
 }
 
 serve(async (req) => {
-  await authenticate(req);
+  const { user } = await authenticate(req);
+  // Drafts feed the admin-only email send and spend the Gemini quota.
+  assertOutreachAllowed(user);
 
   const body = await req.json().catch(() => null);
   const businessName = clean(body?.businessName, 200);

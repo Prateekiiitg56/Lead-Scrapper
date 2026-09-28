@@ -3,6 +3,7 @@
   "nodes": [
     {
       "parameters": {
+        "authentication": "headerAuth",
         "httpMethod": "POST",
         "path": "unbias-send-email",
         "responseMode": "responseNode",
@@ -26,7 +27,13 @@
         300
       ],
       "webhookId": "unbias-send-email",
-      "notes": "POST body: { \"to_email\", \"business_name\", \"address\", \"website\", \"template_id\", \"subject\", \"custom_body\" }"
+      "notes": "POST body: { \"to_email\", \"business_name\", \"address\", \"website\", \"template_id\", \"subject\", \"custom_body\" } Header Auth: only the n8n-proxy Edge Function (X-Webhook-Secret) may call this.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_WEBHOOK_SECRET_CREDENTIAL_ID",
+          "name": "Lead-Scrapper webhook secret"
+        }
+      }
     },
     {
       "parameters": {
