@@ -14,14 +14,16 @@ async function generate(prompt: string, maxOutputTokens: number): Promise<string
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const payload = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens, thinkingConfig: { thinkingLevel: 'low' } },
+    generationConfig: { temperature: 0.7, maxOutputTokens },
   });
   const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': requireEnv('GEMINI_API_KEY') };
 
   let lastStatus = 0;
   let lastDetail = '';
+  let attempts = 0;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    attempts++;
     if (attempt > 0) {
       const delayMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
       console.log(`gemini retry ${attempt}/${MAX_RETRIES} after ${delayMs}ms`);
@@ -37,7 +39,7 @@ async function generate(prompt: string, maxOutputTokens: number): Promise<string
 
     lastStatus = res.status;
     lastDetail = await res.text().catch(() => '');
-    console.error(`gemini error (attempt ${attempt + 1})`, lastStatus, lastDetail.slice(0, 500));
+    console.error(`gemini error (attempt ${attempts})`, lastStatus, lastDetail.slice(0, 500));
 
     // Non-retryable errors → bail immediately
     if (!RETRYABLE_STATUSES.has(lastStatus)) break;
@@ -45,7 +47,7 @@ async function generate(prompt: string, maxOutputTokens: number): Promise<string
 
   if (lastStatus === 402) throw new HttpError(402, 'AI drafting is unavailable: the Gemini API key has no billing or credits left. Use a standard template.');
   if (lastStatus === 429) throw new HttpError(429, 'AI drafting is rate-limited right now. Wait a minute or use a standard template.');
-  throw new HttpError(502, `AI drafting failed (Gemini HTTP ${lastStatus}). Retried ${MAX_RETRIES} times.`);
+  throw new HttpError(502, `AI drafting failed (Gemini HTTP ${lastStatus} after ${attempts} attempt(s)). Detail: ${lastDetail.slice(0, 200)}`);
 }
 
 serve(async (req) => {
